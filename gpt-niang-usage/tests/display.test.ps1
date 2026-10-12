@@ -34,7 +34,9 @@ try{
   Pump-Display
   foreach($dpi in @(1,1.25,1.5,2,2.5)){
    foreach($scale in @(0.6,1,2.5)){
-    $script:displayScale=[Math]::Min($scale,[Math]::Min($area.Width,$area.Height)/378/$dpi)
+    # WPF Slider.Value and persisted scale are doubles. An integer first
+    # argument selects Math.Min(int,int) and rounds a fractional work-area fit.
+    $script:displayScale=[Math]::Min([double]$scale,[Math]::Min($area.Width,$area.Height)/378/$dpi)
     # The old loop grew on every update when host and renderer DPI differed.
     foreach($iteration in 1..8){
      $pixels=Set-WidgetPixelSize $dpi
