@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import GPTNiangUpdate
+import GPTNiangCore
 import Darwin
 
 private struct MacUpdatePreferences: Codable { var automatic = true }
@@ -15,6 +16,13 @@ final class NativeUpdater: ObservableObject {
         }
     }
     @Published private(set) var status = "自動檢查正式版，每 24 小時一次"
+    private var statusKey = "自動檢查正式版，每 24 小時一次"
+    private var statusArguments: [String] = []
+    func localizedStatus(_ language: InterfaceLanguage) -> String { language.text(statusKey, arguments: statusArguments) }
+    private func setStatus(_ key: String, _ arguments: String...) {
+        statusKey = key; statusArguments = arguments
+        status = InterfaceLanguage.traditional.text(key, arguments: arguments)
+    }
     @Published private(set) var busy = false
     let currentVersion: String
     private let data: URL
@@ -34,9 +42,9 @@ final class NativeUpdater: ObservableObject {
         schedule = (try? UpdateFiles.read(MacUpdateSchedule.self, at: data.appendingPathComponent("mac-update-schedule.json"))) ?? MacUpdateSchedule()
         automatic = ((try? UpdateFiles.read(MacUpdatePreferences.self, at: data.appendingPathComponent("mac-update-preferences.json"))) ?? MacUpdatePreferences()).automatic
         if let journal = try? UpdateFiles.read(UpdateJournal.self, at: data.appendingPathComponent("mac-update-transaction.json")) {
-            if journal.phase == .committed { status = "已更新至 \(journal.version)。" }
-            if journal.phase == .rolledBack { status = "更新未完成，已恢復 \(journal.oldVersion)。" }
-            if journal.phase == .recoveryFailed { status = "更新恢復未完成，請查看資料目錄中的診斷記錄。" }
+            if journal.phase == .committed { setStatus("已更新至 %@。", String(describing: journal.version)) }
+            if journal.phase == .rolledBack { setStatus("更新未完成，已恢復 %@。", String(describing: journal.oldVersion)) }
+            if journal.phase == .recoveryFailed { setStatus("更新恢復未完成，請查看資料目錄中的診斷記錄。") }
         }
     }
     func start() {
@@ -66,14 +74,14 @@ final class NativeUpdater: ObservableObject {
                 let store = try UpdateStore(app: app, data: data); let lock = try UpdateLock(at: data)
                 defer { withExtendedLifetime(lock) {} }
                 try store.cleanup()
-            } catch { status = "更新清理未完成：" + error.localizedDescription }
+            } catch { setStatus("更新清理未完成：%@", error.localizedDescription) }
         }
     }
     func check(manual: Bool) {
         guard !busy else { return }
-        guard !sourceCheckout() else { status = "源碼版本請使用 Git 更新。"; return }
+        guard !sourceCheckout() else { setStatus("源碼版本請使用 Git 更新。"); return }
         guard !app.path.contains("/AppTranslocation/"), FileManager.default.isWritableFile(atPath: app.deletingLastPathComponent().path) else {
-            status = "請先將 GPT 娘移到可寫入的應用程式目錄。"; return
+            setStatus("請先將 GPT 娘移到可寫入的應用程式目錄。"); return
         }
         if !manual && (!automatic || Date().timeIntervalSince1970 < schedule.nextCheck) { return }
         schedule.nextCheck = Date().timeIntervalSince1970 + UpdatePolicy.day
@@ -93,13 +101,13 @@ final class NativeUpdater: ObservableObject {
                 let active = try UpdateStore(app: app, data: data); store = active
                 lock = try UpdateLock(at: data)
                 try active.cleanup()
-                status = "正在檢查正式版…"
+                setStatus("正在檢查正式版…")
                 let metadata = try await NativeDownload.bytes(from: UpdatePolicy.api, limit: 1024 * 1024)
                 let release = try JSONDecoder().decode(OfficialRelease.self, from: metadata)
-                guard let selected = try UpdatePolicy.select(release, current: currentVersion) else { status = "已是最新正式版。"; return }
+                guard let selected = try UpdatePolicy.select(release, current: currentVersion) else { setStatus("已是最新正式版。"); return }
                 let id = UUID().uuidString; token = id
                 try active.createOwned(active.cache(id), token: id)
-                status = "正在下載 \(selected.version)…"
+                setStatus("正在下載 %@…", String(describing: selected.version))
                 let sums = try await NativeDownload.bytes(from: selected.checksums.browser_download_url, limit: 1024 * 1024)
                 try UpdatePolicy.verify(sums, asset: selected.checksums)
                 let archive = try await NativeDownload.bytes(from: selected.archive.browser_download_url, limit: UpdatePolicy.maximumArchive)
@@ -111,12 +119,12 @@ final class NativeUpdater: ObservableObject {
                     return (candidate, digest)
                 }.value
                 try Task.checkCancellation()
-                status = "下載已驗證，請關閉設定視窗，等待掛件空閒後安裝。"
+                setStatus("下載已驗證，請關閉設定視窗，等待掛件空閒後安裝。")
                 while !idle() {
-                    if !manual && !automatic { status = "自動更新已關閉，下載已清理。"; return }
+                    if !manual && !automatic { setStatus("自動更新已關閉，下載已清理。"); return }
                     try await Task.sleep(nanoseconds: 500_000_000)
                 }
-                if !manual && !automatic { status = "自動更新已關閉，下載已清理。"; return }
+                if !manual && !automatic { setStatus("自動更新已關閉，下載已清理。"); return }
                 try active.createOwned(active.artifact(id), token: id)
                 try await Task.detached {
                     try FileManager.default.copyItem(at: prepared.0, to: active.staged(id))
@@ -128,9 +136,9 @@ final class NativeUpdater: ObservableObject {
                 try active.save(journal); keep = true
                 lock = nil // The separate helper takes over the transaction lock.
                 try Self.launchHelper(store: active, recover: false)
-                status = "正在安裝更新，完成後會自動重新開啟。"; terminate()
+                setStatus("正在安裝更新，完成後會自動重新開啟。"); terminate()
             } catch {
-                status = "更新失敗：" + error.localizedDescription
+                setStatus("更新失敗：%@", error.localizedDescription)
                 if let delay = (error as? UpdateFailure)?.retryAfter { schedule.nextCheck = max(schedule.nextCheck, Date().timeIntervalSince1970 + delay) }
                 try? UpdateFiles.write(schedule, to: data.appendingPathComponent("mac-update-schedule.json")); store?.diagnose(error)
             }

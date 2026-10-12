@@ -5,7 +5,7 @@ import os
 
 @MainActor
 final class WidgetModel: ObservableObject {
-    @Published var snapshot = UsageSnapshot(error: "正在讀取目前帳戶的額度…")
+    @Published var snapshot = UsageSnapshot()
     @Published var message: String?
     @Published var bubble = false
     @Published var sceneStarted = Date()
@@ -15,12 +15,19 @@ final class WidgetModel: ObservableObject {
     @Published var colorPaused: Bool
     @Published var colorScope: ColorScope = .none
     @Published var specialQuotes: String
+    @Published var language: InterfaceLanguage
     @Published var bubbleTapAdvance: Bool
     @Published var displayScale = 1.0
     @Published var scale: Double
     @Published var volume: Double
     @Published var loginRequested: Bool
     @Published var followCodex: Bool
+    @Published var desktopTopmost: Bool
+    @Published var desktopLeft: Double?
+    @Published var desktopBottom: Double?
+    @Published var soundOn: Bool
+    @Published var hideMenu: Bool
+    @Published var facingLeft = false
     @Published var x: Double
     @Published var y: Double
     @Published var quoteText = ""
@@ -56,6 +63,7 @@ final class WidgetModel: ObservableObject {
         // Keep preferences together with quota state; no shared Codex config edits.
         let prefs = dataDirectory.appendingPathComponent("preferences.json")
         let values = (try? Data(contentsOf: prefs)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        language = InterfaceLanguage(rawValue: values["language"] as? String ?? "system") ?? .system
         defaults = .standard
         colorMode = ColorMode(rawValue: values["colorMode"] as? String ?? "mixed") ?? .mixed
         fullChance = min(100, max(0, values["fullChance"] as? Double ?? 0.5))
@@ -63,19 +71,27 @@ final class WidgetModel: ObservableObject {
         colorPaused = values["colorPaused"] as? Bool ?? false
         specialQuotes = values["specialQuotes"] as? String ?? "Token来，Token来"
         bubbleTapAdvance = values["bubbleTapAdvance"] as? Bool ?? false
-        scale = min(1.5, max(0.6, values["scale"] as? Double ?? 1))
+        scale = min(2.5, max(0.6, values["scale"] as? Double ?? 1))
         volume = min(1, max(0, values["volume"] as? Double ?? 0.9))
         loginRequested = values["loginRequested"] as? Bool ?? false
         followCodex = values["followCodex"] as? Bool ?? true
+        desktopTopmost = values["desktopTopmost"] as? Bool ?? false
+        desktopLeft = values["desktopLeft"] as? Double
+        desktopBottom = values["desktopBottom"] as? Double
+        soundOn = values["soundOn"] as? Bool ?? true
+        hideMenu = values["hideMenu"] as? Bool ?? false
         x = min(1, max(0, values["x"] as? Double ?? 1))
         y = min(1, max(0, values["y"] as? Double ?? 0))
         do {
             try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dataDirectory.path)
             try? FileManager.default.removeItem(at: dataDirectory.appendingPathComponent("stop.flag"))
-        } catch { settingsError = "無法建立本機資料目錄：\(error.localizedDescription)" }
+        } catch { settingsError = text("無法建立本機資料目錄：%@", String(describing: error.localizedDescription)) }
         loadQuotes()
+        snapshot = UsageSnapshot(error: text("正在讀取目前帳戶的額度…"))
     }
+
+    func text(_ key: String, _ args: String...) -> String { language.text(key, arguments: args) }
 
     func start() {
         startWorker()
@@ -91,18 +107,26 @@ final class WidgetModel: ObservableObject {
     }
     func tick() {
         let file = dataDirectory.appendingPathComponent("status.json")
-        if let data = try? Data(contentsOf: file), data != lastStatusData, let next = try? JSONDecoder().decode(UsageSnapshot.self, from: data) {
-            lastStatusData = data; snapshot = next
-            let checked = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["checkedAt"] as? Double
-            if checked != lastChecked { lastChecked = checked; refreshing = false }
+        if let data = try? Data(contentsOf: file) {
+            readSnapshot(data)
+        } else if lastStatusData != nil {
+            lastStatusData = nil; snapshot = UsageSnapshot(error: text("正在讀取目前帳戶的額度…"))
         }
         if Date() > refreshUntil { refreshing = false }
         if worker?.isRunning != true { startWorker() }
     }
+    func readSnapshot(_ data: Data) {
+            if data != lastStatusData {
+                lastStatusData = data
+                snapshot = (try? JSONDecoder().decode(UsageSnapshot.self, from: data)) ?? UsageSnapshot(error: text("额度数据无法读取，请刷新。"))
+                let checked = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["checkedAt"] as? Double
+                if checked != lastChecked { lastChecked = checked; refreshing = false }
+            }
+    }
     private func startWorker() {
         guard worker?.isRunning != true else { return }
         guard let node = findNode() else {
-            snapshot = UsageSnapshot(error: "找不到 Node.js 20+。請先安裝 Node.js，再重新開啟 GPT 娘。")
+            snapshot = UsageSnapshot(error: text("找不到 Node.js 20+。請先安裝 Node.js，再重新開啟 GPT 娘。"))
             return
         }
         let backend = resources.appendingPathComponent("Backend")
@@ -123,7 +147,7 @@ final class WidgetModel: ObservableObject {
             process.environment = env
             try process.run(); worker = process
             logger.info("Quota worker started")
-        } catch { snapshot = UsageSnapshot(error: "額度背景程序無法啟動：\(error.localizedDescription)") }
+        } catch { snapshot = UsageSnapshot(error: text("額度背景程序無法啟動：%@", String(describing: error.localizedDescription))) }
     }
     func findNode() -> URL? {
         let env = ProcessInfo.processInfo.environment
@@ -134,21 +158,30 @@ final class WidgetModel: ObservableObject {
     }
     func refresh() {
         refreshing = true; refreshUntil = Date().addingTimeInterval(22)
-        let wasOpen = bubble
-        showQuota()
-        if !wasOpen { return }
-        do { try Data(UUID().uuidString.utf8).write(to: dataDirectory.appendingPathComponent("refresh.flag"), options: .atomic) }
-        catch { settingsError = "無法要求刷新：\(error.localizedDescription)"; refreshing = false }
+        requestRefreshFlag()
+    }
+    func hideBubble() { quoteGeneration += 1; bubble = false; updateAppearance() }
+    func toggleQuota() {
+        if bubble && message == nil { hideBubble() } else { showQuota() }
+    }
+    func resetPosition() {
+        if followCodex { x = 1; y = 0 } else { desktopLeft = nil; desktopBottom = nil }
+        hideBubble(); savePreferences()
     }
     func writePresence(visible: Bool) {
         try? writeJSON(["visible": visible, "at": Date().timeIntervalSince1970 * 1000,
                         "pid": ProcessInfo.processInfo.processIdentifier], to: dataDirectory.appendingPathComponent("presence.json"))
     }
     func savePreferences() {
-        try? writeJSON(["scale": scale, "volume": volume, "followCodex": followCodex, "loginRequested": loginRequested, "x": x, "y": y,
-                        "colorMode": colorMode.rawValue, "fullChance": fullChance, "textChance": textChance,
-                        "colorPaused": colorPaused, "specialQuotes": specialQuotes, "bubbleTapAdvance": bubbleTapAdvance],
-                       to: dataDirectory.appendingPathComponent("preferences.json"))
+        let file = dataDirectory.appendingPathComponent("preferences.json")
+        var values = (try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let current: [String: Any] = ["scale": scale, "volume": volume, "followCodex": followCodex, "loginRequested": loginRequested, "x": x, "y": y,
+            "colorMode": colorMode.rawValue, "fullChance": fullChance, "textChance": textChance, "colorPaused": colorPaused,
+            "specialQuotes": specialQuotes, "bubbleTapAdvance": bubbleTapAdvance, "language": language.rawValue,
+            "desktopTopmost": desktopTopmost, "soundOn": soundOn, "hideMenu": hideMenu]
+        values.merge(current) { _, new in new }
+        values["desktopLeft"] = desktopLeft; values["desktopBottom"] = desktopBottom
+        try? writeJSON(values, to: file)
     }
     func showQuota() {
         let opening = !bubble
@@ -194,24 +227,36 @@ final class WidgetModel: ObservableObject {
         let file = dataDirectory.appendingPathComponent("quotes.json")
         if FileManager.default.fileExists(atPath: file.path) {
             if let data = try? Data(contentsOf: file), let custom = try? QuoteFile.decode(data), !custom.isEmpty { quotes = custom }
-            else { quotes = builtin; settingsError = "自訂語錄無法讀取，暫時使用內建語錄。" }
+            else { quotes = builtin; settingsError = text("自訂語錄無法讀取，暫時使用內建語錄。") }
         } else { quotes = builtin }
-        quoteText = quotes.map(\.text).joined(separator: "\n")
+        quoteText = QuoteFile.editorText(quotes)
     }
     func saveQuotes() {
-        let rows = quoteText.split(separator: "\n").map { Quote(text: String($0).trimmingCharacters(in: .whitespaces)) }
-        guard !rows.isEmpty, rows.allSatisfy(\.valid) else { settingsError = "每行一則語錄，每則最多 200 字，至少保留一則。"; return }
+        let rows = QuoteFile.editorQuotes(quoteText)
+        guard !rows.isEmpty, rows.allSatisfy(\.valid) else { settingsError = text("每行一則語錄，每則最多 200 字，至少保留一則。"); return }
         do {
+            try backupQuotes()
             try writeJSON(["version": 1, "quotes": rows.map { ["text": $0.text, "weight": $0.weight] as [String: Any] }],
                           to: dataDirectory.appendingPathComponent("quotes.json"))
             quotes = rows; settingsError = nil
         } catch { settingsError = error.localizedDescription }
     }
+    private func backupQuotes() throws {
+        let file = dataDirectory.appendingPathComponent("quotes.json")
+        if FileManager.default.fileExists(atPath: file.path) {
+            try Data(contentsOf: file).write(to: dataDirectory.appendingPathComponent("quotes.json.bak"), options: .atomic)
+        }
+    }
     func resetQuotes() {
-        try? FileManager.default.removeItem(at: dataDirectory.appendingPathComponent("quotes.json")); loadQuotes()
+        do {
+            try backupQuotes()
+            let file = dataDirectory.appendingPathComponent("quotes.json")
+            if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+            loadQuotes()
+        } catch { settingsError = error.localizedDescription }
     }
     func play(_ name: String) {
-        guard volume > 0, let sound = NSSound(contentsOf: resources.appendingPathComponent(name + ".wav"), byReference: false) else { return }
+        guard soundOn, volume > 0, let sound = NSSound(contentsOf: resources.appendingPathComponent(name + ".wav"), byReference: false) else { return }
         sounds.removeAll { !$0.isPlaying }; sounds.append(sound)
         sound.volume = Float(volume); sound.play()
     }

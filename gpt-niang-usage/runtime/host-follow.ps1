@@ -7,6 +7,12 @@ using System.Runtime.InteropServices;
 // a DispatcherTimer here makes a separate transparent window trail its host.
 public sealed class GptWidgetHostFollower : IDisposable {
  [StructLayout(LayoutKind.Sequential)] struct Rect {public int Left,Top,Right,Bottom;}
+ [StructLayout(LayoutKind.Sequential)] struct MonitorInfo {public int Size;public Rect Monitor,Work;public uint Flags;}
+ [StructLayout(LayoutKind.Sequential)] struct Point {public int X,Y;}
+ [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(Point point,uint flags);
+ [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
+ [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h,uint flags);
+ [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr monitor,ref MonitorInfo info);
  delegate void WinEventProc(IntPtr hook,uint ev,IntPtr hwnd,int objectId,int childId,uint threadId,uint time);
  [DllImport("user32.dll")] static extern IntPtr SetWinEventHook(uint first,uint last,IntPtr module,WinEventProc callback,uint processId,uint threadId,uint flags);
  [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
@@ -25,6 +31,8 @@ public sealed class GptWidgetHostFollower : IDisposable {
  IntPtr host,locationHook,lifecycleHook;
  int insetLeft,insetTop,insetRight,insetBottom,width,height,left,right,bottom;
  int hostWidth,hostHeight,clipWidth=-1,clipHeight=-1;
+ uint hostDpi;
+ IntPtr selectedMonitor;
  string anchor;
  bool enabled,hiddenByHost,disposed;
  public long MovementEvents {get;private set;}
@@ -36,6 +44,22 @@ public sealed class GptWidgetHostFollower : IDisposable {
  public bool Moving {get;private set;}
  public bool Ready {get{return locationHook!=IntPtr.Zero;}}
  public GptWidgetHostFollower(IntPtr widget){this.widget=widget;callback=OnEvent;}
+ public static int[] VisibleBounds(IntPtr host,int left,int top,int right,int bottom){
+  return Clip(MonitorFromWindow(host,2),left,top,right,bottom);
+ }
+ public static int[] VisibleBoundsAt(int left,int top,int right,int bottom,int x,int y){
+  return Clip(MonitorFromPoint(new Point{X=x,Y=y},2),left,top,right,bottom);
+ }
+ static int[] Clip(IntPtr monitor,int left,int top,int right,int bottom){
+  var info=new MonitorInfo();info.Size=Marshal.SizeOf(typeof(MonitorInfo));
+  if(GetMonitorInfo(monitor,ref info)){
+   int l=Math.Max(left,info.Work.Left),t=Math.Max(top,info.Work.Top);
+   int r=Math.Min(right,info.Work.Right),b=Math.Min(bottom,info.Work.Bottom);
+   if(r>l&&b>t)return new[]{l,t,r,b};
+   return new[]{info.Work.Left,info.Work.Top,info.Work.Right,info.Work.Bottom};
+  }
+  return new[]{left,top,right,bottom};
+ }
 
  public void Configure(IntPtr host,int frameLeft,int frameTop,int frameRight,int frameBottom,
                        int width,int height,int left,int right,int bottom,string anchor,bool enabled){
@@ -58,7 +82,7 @@ public sealed class GptWidgetHostFollower : IDisposable {
      insetLeft=il;insetTop=it;insetRight=ir;insetBottom=ib;
     }
    }
-   hostWidth=r.Right-r.Left;hostHeight=r.Bottom-r.Top;LayoutDirty=false;
+   hostWidth=r.Right-r.Left;hostHeight=r.Bottom-r.Top;hostDpi=GetDpiForWindow(host);selectedMonitor=IntPtr.Zero;LayoutDirty=false;
   }
   this.width=width;this.height=height;this.left=left;this.right=right;
   this.bottom=bottom;this.anchor=anchor;this.enabled=enabled;
@@ -86,10 +110,19 @@ public sealed class GptWidgetHostFollower : IDisposable {
    ShowWindow(widget,0);hiddenByHost=true;return false;
   }
   Rect frame,current;if(!GetWindowRect(host,out frame))return false;
-  if(!LayoutDirty&&(frame.Right-frame.Left!=hostWidth||frame.Bottom-frame.Top!=hostHeight)){
+  uint dpi=GetDpiForWindow(host);
+  if(frame.Right-frame.Left<64*Math.Max(1,dpi/96.0)||frame.Bottom-frame.Top<64*Math.Max(1,dpi/96.0)){ShowWindow(widget,0);hiddenByHost=true;return false;}
+  if(!LayoutDirty&&(dpi!=hostDpi||frame.Right-frame.Left!=hostWidth||frame.Bottom-frame.Top!=hostHeight)){
    LayoutDirty=true;if(LayoutRequested!=null)LayoutRequested();
   }
   frame.Left+=insetLeft;frame.Top+=insetTop;frame.Right-=insetRight;frame.Bottom-=insetBottom;
+  int px=anchor=="right"?frame.Right-width-right:frame.Left+left;
+  int py=Math.Max(frame.Top,frame.Bottom-height-bottom);
+  IntPtr monitor=MonitorFromPoint(new Point{X=px+width/2,Y=py+height/2},2);
+  if(selectedMonitor!=IntPtr.Zero&&monitor!=selectedMonitor&&!LayoutDirty){LayoutDirty=true;if(LayoutRequested!=null)LayoutRequested();}
+  selectedMonitor=monitor;
+  var bounds=Clip(monitor,frame.Left,frame.Top,frame.Right,frame.Bottom);
+  frame.Left=bounds[0];frame.Top=bounds[1];frame.Right=bounds[2];frame.Bottom=bounds[3];
   int x=anchor=="right"?frame.Right-width-right:frame.Left+left;
   x=Math.Max(frame.Left,Math.Min(frame.Right-width,x));
   int y=Math.Max(frame.Top,frame.Bottom-height-bottom);
