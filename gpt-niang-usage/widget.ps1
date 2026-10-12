@@ -551,7 +551,8 @@ $pressMove={param($sender,$event)
   $w=[int]($script:window.Width*$dpi);$h=[int]($script:window.Height*$dpi)
   $x=[int][Math]::Max($frame.Left,[Math]::Min($frame.Right-$w,$script:drag.left+$dx))
   $y=[int][Math]::Max($frame.Top,[Math]::Min($frame.Bottom-$h,$script:drag.top+$dy))
-  [GptWidgetNative]::SetWindowPos($script:widgetHandle,[IntPtr]::Zero,$x,$y,$w,$h,0x14)|Out-Null
+  # Move only: a native resize can feed host DPI back into WPF Width/Height.
+  [GptWidgetNative]::SetWindowPos($script:widgetHandle,[IntPtr]::Zero,$x,$y,0,0,0x15)|Out-Null
   $script:lastPosition=$null
   if($script:followHost){
     $script:offsetRight=($frame.Right-$x-$w)/$dpi;$script:offsetBottom=($frame.Bottom-$y-$h)/$dpi
@@ -672,7 +673,7 @@ function Tick-Widget {
       $y=[int][Math]::Max($frame.Top,[Math]::Min($frame.Bottom-$h,$desiredY))
       $position="$($script:hostHandle):$x,$y,$w,$h"
       if($position-ne $script:lastPosition){
-        [GptWidgetNative]::SetWindowPos($script:widgetHandle,[IntPtr]::Zero,$x,$y,$w,$h,0x14)|Out-Null
+        [GptWidgetNative]::SetWindowPos($script:widgetHandle,[IntPtr]::Zero,$x,$y,0,0,0x15)|Out-Null
         $script:lastPosition=$position
         if($script:context.IsOpen){Set-WidgetMenuBounds;Position-WidgetMenuToHost}
       }
