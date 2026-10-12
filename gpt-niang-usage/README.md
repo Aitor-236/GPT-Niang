@@ -2,6 +2,8 @@
 
 这是 Windows 插件与桌面挂件目录，其中的 Node.js 运行时也由 Mac 原生应用复用。安装、使用、更新和隐私说明请看[项目主页](../README.md)。
 
+代码、审查、问题复现及功能建议的作者与对应 PR／Issue，统一记录在[完整贡献致谢](../README.md#致谢与许可)。
+
 - `Install.ps1`：检查依赖并安装；`-CheckOnly` 只检查，不修改系统。
 - `widget.ps1` / `widget.xaml`：Windows WPF 挂件与界面。
 - `runtime/mcp.mjs`：Windows 插件的只读额度查询工具。
