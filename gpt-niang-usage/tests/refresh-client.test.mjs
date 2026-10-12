@@ -136,8 +136,10 @@ test('worker exits when its GUI parent exits and releases ownership',async()=>{
     const deadline=Date.now()+4000;
     while(!healthyWorker(dir) && Date.now()<deadline)await pause(20);
     assert.ok(healthyWorker(dir));
-    const parentExited=once(parent,'exit');parent.kill();await parentExited;
+    // Observe the worker before stopping its GUI: a correct fast exit can
+    // otherwise arrive while awaiting the parent's exit and be missed.
     const childExited=once(child,'exit');
+    const parentExited=once(parent,'exit');parent.kill();await parentExited;
     await Promise.race([childExited,pause(4000).then(()=>{throw new Error('Worker outlived its GUI parent');})]);
     assert.equal(fs.existsSync(path.join(dir,'worker.lock')),false);
     assert.equal(fs.existsSync(path.join(dir,'worker-status.json')),false);
