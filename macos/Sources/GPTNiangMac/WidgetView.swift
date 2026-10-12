@@ -79,7 +79,7 @@ struct WidgetView: View {
                 .opacity(text).offset(x: displayedMessage == nil ? 63 : 46, y: displayedMessage == nil ? 22 : 22)
                 .allowsHitTesting(model.bubble).contentShape(Rectangle()).onTapGesture { model.clickBubble() }
             if model.bubble && displayedMessage == nil {
-                Button { model.refresh() } label: { Image(systemName: model.refreshing ? "hourglass" : "arrow.clockwise").font(.system(size: 12)).foregroundStyle(style("ink", phase: phase)) }
+                Button { model.refresh(renewBubble: true) } label: { Image(systemName: model.refreshing ? "hourglass" : "arrow.clockwise").font(.system(size: 12)).foregroundStyle(style("ink", phase: phase)) }
                     .buttonStyle(.plain).disabled(model.refreshing).frame(width: 20, height: 20)
                     .scaleEffect(x: mirrored ? -1 : 1, y: 1).opacity(text).offset(x: 184, y: 20)
                     .help(model.text("立即刷新額度")).accessibilityLabel(model.text("刷新額度"))
@@ -93,6 +93,7 @@ struct WidgetView: View {
                 }
                 .frame(width: 208, height: 208).contentShape(Rectangle())
                 .overlay(CharacterInteraction(onPress: { down in
+                    model.interactionActive = down
                     withAnimation(reduceMotion ? nil : rebound) { pressed = down }
                     model.play(down ? "press" : "release")
                 }, onDrag: { translation in
@@ -133,7 +134,11 @@ struct WidgetView: View {
                         ForEach(model.snapshot.displayWindows) { window in
                             VStack(spacing: 1) {
                                 HStack {
-                                    Text(window.title(language: model.language)).font(.system(size: 13)).foregroundStyle(Color(hex: "76638D"))
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text(window.title(language: model.language)).font(.system(size: 13))
+                                        Text(model.text(window.expired(at: now) ? "上次 %@%%" : "已用 %@%%", String(format: "%.1f", 100-window.remaining).replacingOccurrences(of: ".0", with: "")))
+                                            .font(.system(size: 9))
+                                    }.foregroundStyle(Color(hex: "76638D"))
                                     Spacer()
                                     Text(window.expired(at: now) ? "—" : "\(window.percentageText)%")
                                         .font(.system(size: 24, weight: .bold)).monospacedDigit()
@@ -174,6 +179,10 @@ struct WidgetView: View {
                 }
             }
         }
+        if let at = model.snapshot.observedAt, at.isFinite {
+            rows.append(model.text("更新时间：%@", Date(timeIntervalSince1970: at/1000).formatted(date: .abbreviated, time: .standard)))
+        }
+        if let error = model.snapshot.error { rows.append(error) }
         return rows.joined(separator: "\n")
     }
     private func quotaStyle(_ window: QuotaWindow, now: Date, phase: Double) -> AnyShapeStyle {

@@ -45,12 +45,15 @@ foreach($layout in @(@{width=378;height=378},@{width=480;height=300})){
     $script:window.Show()
     $handle=([Windows.Interop.WindowInteropHelper]::new($script:window)).Handle
     Pump-SizeTest
+    $workArea=[Windows.Forms.Screen]::FromHandle($handle).WorkingArea
+    $availableWidth=[Math]::Min(900,$workArea.Width-32)
+    $availableHeight=[Math]::Min(900,$workArea.Height-32)
     foreach($path in @('follow','drag')){
       foreach($monitorDpi in @(120,144)){
         foreach($requestedScale in @(0.6,0.7,0.8,1.0,1.4,2.5)){
           $dpi=$monitorDpi/96.0
           # Model the existing fit-to-host behavior and stay within a CI desktop.
-          $script:displayScale=[Math]::Min($requestedScale,[Math]::Min(900/$dpi/$layout.width,900/$dpi/$layout.height))
+          $script:displayScale=[Math]::Min($requestedScale,[Math]::Min($availableWidth/$dpi/$layout.width,$availableHeight/$dpi/$layout.height))
           $script:window.Width=$layout.width*$script:displayScale
           $script:window.Height=$layout.height*$script:displayScale
           Pump-SizeTest

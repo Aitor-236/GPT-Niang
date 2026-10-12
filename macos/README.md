@@ -23,14 +23,14 @@ If a CommandLineTools-only source build reports a missing SwiftUI macro plugin, 
 
 ## Install the release
 
-Download `gpt-niang-usage-widget-v1.3.3-macos-universal.zip` from the [GitHub Release](https://github.com/T7moris/GPT-Niang/releases/latest), verify its entry in `SHA256SUMS.txt`, unzip, and move `GPTNiangMac.app` to Applications before opening. Node.js 20+ and a signed-in Codex desktop app are required; Swift/Xcode is needed only for source builds.
+Download `gpt-niang-usage-widget-v1.3.4-macos-universal.zip` from the [GitHub Release](https://github.com/T7moris/GPT-Niang/releases/latest), verify its entry in `SHA256SUMS.txt`, unzip, and move `GPTNiangMac.app` to Applications before opening. Node.js 20+ and a signed-in Codex desktop app are required; Swift/Xcode is needed only for source builds.
 
 The release is ad-hoc signed, not Developer ID signed or notarized. If macOS blocks the first launch, after checking the source and checksum follow [Apple’s instructions](https://support.apple.com/102445) in System Settings → Privacy & Security → Open Anyway.
 
 To calculate the downloaded ZIP’s checksum in Terminal, change to the download directory and run:
 
 ```sh
-shasum -a 256 gpt-niang-usage-widget-v1.3.3-macos-universal.zip
+shasum -a 256 gpt-niang-usage-widget-v1.3.4-macos-universal.zip
 ```
 
 Compare the result with the same filename in `SHA256SUMS.txt`; hexadecimal letter case does not matter.
@@ -63,8 +63,8 @@ refresh and supports `GPT_NIANG_CODEX_APP` for a nonstandard Codex app location.
 - Click the quota cloud to see a quote; click the quote cloud to close it.
 - Drag the character to reposition it. It snaps near the left/right edges and
   faces inward; the text remains upright.
-- Double-click or right-click the character to open settings. The hover menu
-  button and menu bar also provide settings.
+- Single, double and rapid clicks use the ordinary quota/quote action.
+  Right-click opens the native menu; the hover button and menu bar provide settings.
 - Settings include scale, audio, quote editing, the original color modes, random
   color probabilities, flow pause, special quote triggers, and click-to-advance.
 - Following mode hides the panel when Codex has no visible main window. Turn

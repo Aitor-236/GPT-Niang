@@ -15,15 +15,27 @@ public enum InterfaceLanguage: String, Codable, CaseIterable {
         case .traditional: return "繁體中文"
         }
     }
+    private static let catalogs: [String: [String: String]] = {
+        let packaged = Bundle.main.url(forResource: "GPTNiangMac_GPTNiangCore", withExtension: "bundle").flatMap(Bundle.init(url:))
+        let root = packaged ?? Bundle.module
+        var catalogs: [String: [String: String]] = [:]
+        for locale in ["zh-Hans", "zh-Hant"] {
+            for folder in [locale.lowercased(), locale] {
+                guard let resources = root.resourceURL,
+                      let data = try? Data(contentsOf: resources.appendingPathComponent(folder + ".lproj/Localizable.strings")),
+                      let table = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String] else { continue }
+                catalogs[locale] = table; break
+            }
+        }
+        return catalogs
+    }()
     public func text(_ key: String, _ arguments: String...) -> String { text(key, arguments: arguments) }
     public func text(_ key: String, arguments: [String]) -> String {
         let locale = resolved() == .traditional ? "zh-Hant" : "zh-Hans"
-        // SwiftPM's generated accessor embeds its build path. Prefer the resource
-        // bundle inside the distributed app; use Bundle.module in source/tests.
-        let packaged = Bundle.main.url(forResource: "GPTNiangMac_GPTNiangCore", withExtension: "bundle").flatMap(Bundle.init(url:))
-        let root = packaged ?? Bundle.module
-        let localized = root.url(forResource: locale, withExtension: "lproj").flatMap(Bundle.init(url:)) ?? root
-        let format = localized.localizedString(forKey: key, value: key, table: "Localizable")
+        // Read the explicitly selected catalog, independently of Bundle's
+        // system-preferred localization; SwiftPM lowercases lproj directory names.
+        // Cache once so animation ticks never reread files or create bundles.
+        let format = Self.catalogs[locale]?[key] ?? key
         guard !arguments.isEmpty else { return format }
         return String(format: format, locale: Locale(identifier: locale), arguments: arguments.map { $0 as CVarArg })
     }

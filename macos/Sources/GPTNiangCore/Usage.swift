@@ -122,9 +122,11 @@ public enum QuoteFile {
         quotes.map { $0.weight == 1 ? $0.text : "\($0.weight) | \($0.text)" }.joined(separator: "\n")
     }
     public static func editorQuotes(_ text: String) -> [Quote] {
-        text.split(separator: "\n").map { line in
+        text.split(separator: "\n").compactMap { line -> Quote? in
             let value = line.trimmingCharacters(in: .whitespaces)
+            guard !value.isEmpty else { return nil }
             guard let separator = value.firstIndex(of: "|"),
+                  value[..<separator].trimmingCharacters(in: .whitespaces).range(of: #"^\d+(?:\.\d+)?$"#, options: .regularExpression) != nil,
                   let weight = Double(value[..<separator].trimmingCharacters(in: .whitespaces)) else { return Quote(text: value) }
             return Quote(text: String(value[value.index(after: separator)...]).trimmingCharacters(in: .whitespaces), weight: weight)
         }

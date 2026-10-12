@@ -4,6 +4,31 @@ import GPTNiangCore
 @testable import GPTNiangMac
 
 final class NativeInteractionTests: XCTestCase {
+    @MainActor func testNativeDragMovesPanelWithoutResizingOrClicking() async throws {
+        _ = NSApplication.shared
+        let panel = NSPanel(contentRect: CGRect(x: 100, y: 100, width: 378, height: 378),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let view = CharacterInteraction.PointerView(frame: CGRect(x: 0, y: 0, width: 378, height: 378))
+        panel.contentView = view
+        defer { panel.close() }
+        let original = panel.frame
+        var clicks = 0, menus = 0, completed = false
+        view.onClick = { clicks += 1 }; view.onMenu = { _, _ in menus += 1 }
+        view.onDrag = { delta in
+            if delta == .zero { completed = true }
+            else { panel.setFrameOrigin(CGPoint(x: original.minX+delta.width, y: original.minY-delta.height)) }
+        }
+        func event(_ type: NSEvent.EventType, _ location: CGPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: 0,
+                windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 0)!
+        }
+        view.mouseDown(with: event(.leftMouseDown, CGPoint(x: 10, y: 10)))
+        view.mouseDragged(with: event(.leftMouseDragged, CGPoint(x: 20, y: 25)))
+        view.mouseUp(with: event(.leftMouseUp, CGPoint(x: 20, y: 25)))
+        XCTAssertEqual(panel.frame.size, original.size)
+        XCTAssertEqual(panel.frame.origin, CGPoint(x: original.minX+10, y: original.minY+15))
+        XCTAssertTrue(completed); XCTAssertEqual(clicks, 0); XCTAssertEqual(menus, 0)
+    }
     @MainActor func testRefreshAndCharacterActionsFollowWindowsBubbleSequence() async throws {
         let data = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: data) }
@@ -11,11 +36,16 @@ final class NativeInteractionTests: XCTestCase {
         model.refresh(); XCTAssertFalse(model.bubble)
         XCTAssertTrue(FileManager.default.fileExists(atPath: data.appendingPathComponent("refresh.flag").path))
         model.characterClick(); XCTAssertTrue(model.bubble); XCTAssertNil(model.message)
+        model.sceneStarted = .distantPast
+        model.refresh(); XCTAssertEqual(model.sceneStarted, .distantPast)
+        model.refresh(renewBubble: true); XCTAssertNotEqual(model.sceneStarted, .distantPast)
         model.clickBubble(); XCTAssertNotNil(model.message)
         model.characterClick(); XCTAssertNil(model.message); XCTAssertTrue(model.bubble)
         model.bubbleTapAdvance = true
         model.characterClick(); XCTAssertNotNil(model.message)
         model.characterClick(); XCTAssertFalse(model.bubble)
+        model.refreshing = false; model.interactionActive = true; XCTAssertFalse(model.updateIdle)
+        model.interactionActive = false; XCTAssertTrue(model.updateIdle)
     }
     @MainActor func testResetQuotesBacksUpWeightedCustomData() async throws {
         let data = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

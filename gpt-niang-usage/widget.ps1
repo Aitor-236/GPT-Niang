@@ -491,7 +491,7 @@ function Update-Quota {
   try{$stamp=[IO.File]::GetLastWriteTimeUtc($file).Ticks
     if(!(Test-Path -LiteralPath $file)){$script:status=$null;$script:statusStamp=0}
     elseif($stamp-ne $script:statusStamp){$script:status=Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json;$script:statusStamp=$stamp}
-  }catch{}
+  }catch{$script:status=$null;$script:statusStamp=0}
   $now=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
   foreach($row in (Get-QuotaRows)){
     $prefix=$row.prefix;$q=$row.window

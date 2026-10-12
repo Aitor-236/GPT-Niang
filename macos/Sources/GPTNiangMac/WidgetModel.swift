@@ -34,6 +34,7 @@ final class WidgetModel: ObservableObject {
     @Published var settingsError: String?
     @Published var refreshing = false
     @Published var trackingNote: String?
+    var interactionActive = false
     let dataDirectory: URL
     let resources: URL
     let characterImage: NSImage?
@@ -41,7 +42,7 @@ final class WidgetModel: ObservableObject {
     private var worker: Process?
     var workerRunning: Bool { worker?.isRunning == true }
     var updateIdle: Bool {
-        guard !refreshing else { return false }
+        guard !refreshing, !interactionActive else { return false }
         let file = dataDirectory.appendingPathComponent("worker-status.json")
         let status = (try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         return status?["busy"] as? Bool != true
@@ -156,8 +157,9 @@ final class WidgetModel: ObservableObject {
             .compactMap { $0 } + (env["PATH"] ?? "").split(separator: ":").map { String($0) + "/node" }
         return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map { URL(fileURLWithPath: $0) }
     }
-    func refresh() {
+    func refresh(renewBubble: Bool = false) {
         refreshing = true; refreshUntil = Date().addingTimeInterval(22)
+        if renewBubble && bubble && message == nil { restartTTL(delay: 0) }
         requestRefreshFlag()
     }
     func hideBubble() { quoteGeneration += 1; bubble = false; updateAppearance() }

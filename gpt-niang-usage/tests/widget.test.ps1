@@ -323,6 +323,9 @@ try{
       foreach($scale in @(0.6,1,1.4,2.5)){Save-Preview ('refresh-'+$side+'-'+$rows.Count+'-'+$scale) $scale}
     }
   }
+  [IO.File]::WriteAllText((Join-Path $script:dataDir 'status.json'),'broken',[Text.UTF8Encoding]::new($false))
+  Update-Quota
+  Assert-Equal $script:status $null 'Malformed snapshot cannot retain the previous account'
   Remove-Item -LiteralPath (Join-Path $script:dataDir 'status.json')
   Update-Quota
   Assert-Equal $script:status $null 'Removed snapshot is cleared'
