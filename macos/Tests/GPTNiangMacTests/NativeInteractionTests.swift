@@ -4,6 +4,26 @@ import GPTNiangCore
 @testable import GPTNiangMac
 
 final class NativeInteractionTests: XCTestCase {
+    @MainActor func testLegacyDesktopPositionMigratesOnceWithoutLosingFollowOrUnknownPreferences() async throws {
+        let data = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: data) }
+        let file = data.appendingPathComponent("preferences.json")
+        try Data(#"{"followCodex":false,"x":0.25,"y":0.75,"scale":1.4,"volume":0.4,"futurePreference":"preserve"}"#.utf8).write(to: file)
+        let model = WidgetModel(dataDirectory: data, resources: data)
+        XCTAssertTrue(model.desktopNeedsMigration)
+        let area = CGRect(x: -1200, y: 40, width: 1200, height: 800), size = CGSize(width: 529.2, height: 529.2)
+        let expected = WidgetPlacement.frame(host: area, visibleScreen: area, size: size, x: 0.25, y: 0.75)
+        model.migrateDesktopPosition(area: area, size: size)
+        XCTAssertEqual(model.desktopLeft, expected.minX); XCTAssertEqual(model.desktopBottom, expected.minY)
+        let restored = WidgetModel(dataDirectory: data, resources: data)
+        XCTAssertFalse(restored.desktopNeedsMigration); XCTAssertEqual(restored.x, 0.25); XCTAssertEqual(restored.y, 0.75)
+        XCTAssertEqual(restored.volume, 0.4); XCTAssertEqual(restored.scale, 1.4)
+        restored.migrateDesktopPosition(area: CGRect(x: 0, y: 0, width: 1920, height: 1080), size: size)
+        XCTAssertEqual(restored.desktopLeft, expected.minX)
+        let values = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+        XCTAssertEqual(values?["futurePreference"] as? String, "preserve")
+    }
     @MainActor func testNativeDragMovesPanelWithoutResizingOrClicking() async throws {
         _ = NSApplication.shared
         let panel = NSPanel(contentRect: CGRect(x: 100, y: 100, width: 378, height: 378),

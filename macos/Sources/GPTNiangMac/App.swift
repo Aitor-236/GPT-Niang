@@ -259,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             if abs(model.displayScale - fitted) > 0.001 { model.displayScale = fitted }
             size = CGSize(width: 378 * fitted, height: 378 * fitted)
             if dragOrigin == nil {
+                model.migrateDesktopPosition(area: area, size: size)
                 let defaultFrame = WidgetPlacement.frame(host: area, visibleScreen: area, size: size, x: 1, y: 0)
                 let frame = WidgetPlacement.desktopFrame(area: area, size: size,
                     origin: CGPoint(x: model.desktopLeft ?? defaultFrame.minX, y: model.desktopBottom ?? defaultFrame.minY))

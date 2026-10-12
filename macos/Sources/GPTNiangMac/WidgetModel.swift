@@ -28,6 +28,7 @@ final class WidgetModel: ObservableObject {
     @Published var soundOn: Bool
     @Published var hideMenu: Bool
     @Published var facingLeft = false
+    var desktopNeedsMigration = false
     @Published var x: Double
     @Published var y: Double
     @Published var quoteText = ""
@@ -83,6 +84,7 @@ final class WidgetModel: ObservableObject {
         hideMenu = values["hideMenu"] as? Bool ?? false
         x = min(1, max(0, values["x"] as? Double ?? 1))
         y = min(1, max(0, values["y"] as? Double ?? 0))
+        desktopNeedsMigration = !followCodex && desktopLeft == nil && values["layoutVersion"] == nil && !values.isEmpty
         do {
             try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dataDirectory.path)
@@ -177,13 +179,19 @@ final class WidgetModel: ObservableObject {
     func savePreferences() {
         let file = dataDirectory.appendingPathComponent("preferences.json")
         var values = (try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
-        let current: [String: Any] = ["scale": scale, "volume": volume, "followCodex": followCodex, "loginRequested": loginRequested, "x": x, "y": y,
+        let current: [String: Any] = ["layoutVersion": 2, "scale": scale, "volume": volume, "followCodex": followCodex, "loginRequested": loginRequested, "x": x, "y": y,
             "colorMode": colorMode.rawValue, "fullChance": fullChance, "textChance": textChance, "colorPaused": colorPaused,
             "specialQuotes": specialQuotes, "bubbleTapAdvance": bubbleTapAdvance, "language": language.rawValue,
             "desktopTopmost": desktopTopmost, "soundOn": soundOn, "hideMenu": hideMenu]
         values.merge(current) { _, new in new }
         values["desktopLeft"] = desktopLeft; values["desktopBottom"] = desktopBottom
         try? writeJSON(values, to: file)
+    }
+    func migrateDesktopPosition(area: CGRect, size: CGSize) {
+        guard desktopNeedsMigration else { return }
+        let frame = WidgetPlacement.frame(host: area, visibleScreen: area, size: size, x: x, y: y)
+        desktopLeft = frame.minX; desktopBottom = frame.minY
+        desktopNeedsMigration = false; savePreferences()
     }
     func showQuota() {
         let opening = !bubble
