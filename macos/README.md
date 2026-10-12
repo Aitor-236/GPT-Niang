@@ -1,6 +1,6 @@
 # GPT-Niang（GPT 娘）macOS
 
-Current release: **1.3.3**. Chinese installation and platform comparison: [project README](../README.md#macos-安装).
+Current release: **1.3.4**. Chinese installation and platform comparison: [project README](../README.md#macos-安装).
 
 Code contributions, reviews, bug reproductions and feature suggestions are credited with their PR/Issue links in the [complete contributor acknowledgements](../README.md#致谢与许可).
 
@@ -23,14 +23,14 @@ If a CommandLineTools-only source build reports a missing SwiftUI macro plugin, 
 
 ## Install the release
 
-Download `gpt-niang-usage-widget-v1.3.3-macos-universal.zip` from the [GitHub Release](https://github.com/T7moris/GPT-Niang/releases/latest), verify its entry in `SHA256SUMS.txt`, unzip, and move `GPTNiangMac.app` to Applications before opening. Node.js 20+ and a signed-in Codex desktop app are required; Swift/Xcode is needed only for source builds.
+Download `gpt-niang-usage-widget-v1.3.4-macos-universal.zip` from the [GitHub Release](https://github.com/T7moris/GPT-Niang/releases/latest), verify its entry in `SHA256SUMS.txt`, unzip, and move `GPTNiangMac.app` to Applications before opening. Node.js 20+ and a signed-in Codex desktop app are required; Swift/Xcode is needed only for source builds.
 
 The release is ad-hoc signed, not Developer ID signed or notarized. If macOS blocks the first launch, after checking the source and checksum follow [Apple’s instructions](https://support.apple.com/102445) in System Settings → Privacy & Security → Open Anyway.
 
 To calculate the downloaded ZIP’s checksum in Terminal, change to the download directory and run:
 
 ```sh
-shasum -a 256 gpt-niang-usage-widget-v1.3.3-macos-universal.zip
+shasum -a 256 gpt-niang-usage-widget-v1.3.4-macos-universal.zip
 ```
 
 Compare the result with the same filename in `SHA256SUMS.txt`; hexadecimal letter case does not matter.
@@ -63,8 +63,8 @@ refresh and supports `GPT_NIANG_CODEX_APP` for a nonstandard Codex app location.
 - Click the quota cloud to see a quote; click the quote cloud to close it.
 - Drag the character to reposition it. It snaps near the left/right edges and
   faces inward; the text remains upright.
-- Double-click or right-click the character to open settings. The hover menu
-  button and menu bar also provide settings.
+- Single, double and rapid clicks use the ordinary quota/quote action.
+  Right-click opens the native menu; the hover button and menu bar provide settings.
 - Settings include scale, audio, quote editing, the original color modes, random
   color probabilities, flow pause, special quote triggers, and click-to-advance.
 - Following mode hides the panel when Codex has no visible main window. Turn
@@ -153,3 +153,9 @@ The SwiftUI settings window and AppKit menu provide the installed version, manua
 URLSession downloads metadata and the universal app with bounded sizes; CryptoKit verifies SHA256SUMS and the GitHub digest where present. ZIP paths, bundle version, code-signature integrity and both architectures are validated. A separately built Swift helper uses a same-volume atomic exchange, waits for a successful app/worker startup receipt and removes the old app and download cache. If startup fails it stops the new process before restoring and reopening the old app. Interrupted transactions recover on next launch; recovery failure keeps the required files and `mac-update-diagnostic.txt` in the data directory. Cleanup retries even when automatic updates are disabled. Preferences and quotes remain outside the app.
 
 No Windows updater or PowerShell is shipped in the Mac app. Node.js 20+ remains required for the shared quota backend. The app must be in a writable application folder. Older releases need a one-time manual upgrade. The current release is ad-hoc signed and is not Developer ID signed or notarized; macOS may require the user to approve opening it.
+
+## 1.3.4 interaction alignment
+
+Windows defines shared interaction behavior. Every left click, including double and rapid clicks, performs the normal quota/quote action and press/rebound feedback. Right-click opens an AppKit menu; the hover button and menu bar provide native settings. The scale range is 60–250% with 80/100/140% presets. Desktop mode supports cross-screen dragging, a remembered topmost switch (off by default), and a separately saved position. Returning to host mode immediately returns to the normal window level. Refresh does not open the bubble. Weighted quotes round-trip and custom quotes are backed up before reset.
+
+Business `individualLimit` windows with null minutes decode alongside timed windows. Two compact rows show the personal limit and shortest time window, while hover details retain all valid windows. Interface language follows the system or an explicit Simplified/Traditional choice; authored quotes and backend data remain untouched. UI, menus, drag capture and updates remain native SwiftUI/AppKit implementations.

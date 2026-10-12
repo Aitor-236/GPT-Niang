@@ -2,6 +2,11 @@ import Foundation
 import CoreGraphics
 
 public enum WidgetPlacement {
+    public static func desktopFrame(area: CGRect, size: CGSize, origin: CGPoint) -> CGRect {
+        let width = min(size.width, area.width), height = min(size.height, area.height)
+        return CGRect(x: max(area.minX, min(area.maxX-width, origin.x)),
+                      y: max(area.minY, min(area.maxY-height, origin.y)), width: width, height: height)
+    }
     public static func appKitRect(quartz: CGRect, mainDisplayHeight: CGFloat) -> CGRect {
         CGRect(x: quartz.minX, y: mainDisplayHeight - quartz.maxY, width: quartz.width, height: quartz.height)
     }

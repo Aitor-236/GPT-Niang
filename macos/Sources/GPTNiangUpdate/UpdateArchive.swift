@@ -81,6 +81,16 @@ public enum NativeArchive {
         for file in ["Contents/MacOS/GPTNiangMac", "Contents/Helpers/GPTNiangUpdater", "Contents/Resources/Backend/runtime/watch.mjs", "Contents/Resources/quotes.json"] {
             guard FileManager.default.fileExists(atPath: app.appendingPathComponent(file).path) else { throw UpdateFailure("應用包缺少必要檔案。") }
         }
+        if let target = StableVersion(version), let localized = StableVersion("1.3.4"), target >= localized {
+            let resourceURL = app.appendingPathComponent("Contents/Resources/GPTNiangMac_GPTNiangCore.bundle")
+            guard let bundle = Bundle(url: resourceURL), let resources = bundle.resourceURL else { throw UpdateFailure("應用包缺少原生語言資源。") }
+            for locale in ["zh-hans", "zh-hant"] {
+                let file = resources.appendingPathComponent(locale + ".lproj/Localizable.strings")
+                guard let data = try? Data(contentsOf: file),
+                      let table = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String],
+                      !table.isEmpty else { throw UpdateFailure("應用包的原生語言資源不完整。") }
+            }
+        }
         try NativeTools.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
         if universal {
             for file in ["Contents/MacOS/GPTNiangMac", "Contents/Helpers/GPTNiangUpdater"] {

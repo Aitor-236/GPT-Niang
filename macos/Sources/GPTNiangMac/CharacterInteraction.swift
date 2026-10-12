@@ -6,17 +6,17 @@ struct CharacterInteraction: NSViewRepresentable {
     var onPress: (Bool) -> Void
     var onDrag: (CGSize) -> Void
     var onClick: () -> Void
-    var onSettings: () -> Void
+    var onMenu: (NSEvent, NSView) -> Void
 
     func makeNSView(context: Context) -> PointerView { let view = PointerView(); updateNSView(view, context: context); return view }
     func updateNSView(_ view: PointerView, context: Context) {
-        view.onPress = onPress; view.onDrag = onDrag; view.onClick = onClick; view.onSettings = onSettings
+        view.onPress = onPress; view.onDrag = onDrag; view.onClick = onClick; view.onMenu = onMenu
     }
     final class PointerView: NSView {
         var onPress: (Bool) -> Void = { _ in }
         var onDrag: (CGSize) -> Void = { _ in }
         var onClick: () -> Void = {}
-        var onSettings: () -> Void = {}
+        var onMenu: (NSEvent, NSView) -> Void = { _, _ in }
         private var start: CGPoint?
         private var moved = false
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -29,10 +29,10 @@ struct CharacterInteraction: NSViewRepresentable {
         }
         override func mouseUp(with event: NSEvent) {
             guard start != nil else { return }
-            start = nil; onPress(false); onDrag(.zero)
-            if !moved { if event.clickCount >= 2 { onSettings() } else { onClick() } }
+            start = nil; onPress(false)
+            if moved { onDrag(.zero) } else { onClick() }
         }
-        override func rightMouseDown(with event: NSEvent) { onSettings() }
+        override func rightMouseDown(with event: NSEvent) { onMenu(event, self) }
         override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
     }
 }

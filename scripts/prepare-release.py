@@ -38,6 +38,10 @@ for name in [windows, macos]:
                         'Contents/Resources/Backend/runtime/thread-speed.mjs', 'Contents/Resources/gpt-dragon-niang-bust.png']
             if any('GPTNiangMac.app/' + entry not in archive.namelist() for entry in required):
                 raise SystemExit('Mac archive is missing runtime resources')
+            for locale in ['zh-hans', 'zh-hant']:
+                suffix = f'/{locale}.lproj/localizable.strings'
+                if not any('gptniangmac_gptniangcore.bundle/' in entry.lower() and entry.lower().endswith(suffix) for entry in archive.namelist()):
+                    raise SystemExit(f'Mac archive is missing native language resources: {locale}')
             packed = json.loads(archive.read('GPTNiangMac.app/Contents/Resources/Backend/.codex-plugin/plugin.json'))
             if packed['version'] != version:
                 raise SystemExit('Mac backend version differs')

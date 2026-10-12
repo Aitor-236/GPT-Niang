@@ -13,6 +13,8 @@ Add-Type -TypeDefinition @'
 using System;
 public static class GptWidgetNative {
  public struct Point {public int X,Y;}
+ public struct Rect {public int Left,Top,Right,Bottom;}
+ public static Rect Frame(IntPtr h){return new Rect{Left=0,Top=0,Right=8000,Bottom=6000};}
  public static int X,Y,Width,Height,Calls;public static uint Flags;
  public static bool GetCursorPos(out Point point){point=new Point{X=X,Y=Y};return true;}
  public static bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int width,int height,uint flags){Width=width;Height=height;Flags=flags;Calls++;return true;}
@@ -23,15 +25,21 @@ public static class GptWidgetNative {
 }
 public static class GptWidgetZOrderNative {public static bool VisibleSurface(IntPtr h){return true;}}
 '@
-function Get-WidgetPlacementFrame {return [pscustomobject]@{Left=0;Top=0;Right=8000;Bottom=6000}}
+function Get-WidgetPlacementFrame {return [pscustomobject]@{Left=0;Top=0;Right=$script:frameWidth;Bottom=$script:frameHeight}}
 function Get-WidgetPlacementDpi {return $script:testDpi}
 function Set-Facing {}
+# Actual physical sizing is exercised against real HWNDs by display/size tests.
+function Set-WidgetPixelSize {}
+$validFrame=$ast.Find({param($n)$n-is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name-eq 'Test-WidgetPlacementFrame'},$true)
+. ([ScriptBlock]::Create($validFrame.Extent.Text))
+$script:designWidth=378;$script:designHeight=378
 function Tick-Scene {}
 function Tick-WidgetUpdater {}
 function Ensure-QuotaWorker {}
 function Test-WidgetHostReady {return $true}
 function Set-WidgetAboveHost {}
 function Set-WidgetDesktopLayer {}
+function Request-Refresh {}
 function Assert-SizeAfterNativeMove([string]$Context){
   # Reproduce the failure when the host DPI differs from the WPF window DPI:
   # WM_SIZE feeds a native resize back into Window.Width/Height in its own DIPs.
@@ -47,10 +55,12 @@ $script:hostReadiness=[pscustomobject]@{desktopStarted=$true}
 $script:context=[pscustomobject]@{IsOpen=$false}
 $script:hostFollower=New-Object PSObject
 $script:hostFollower|Add-Member ScriptMethod Configure {}
+$script:hostFollower|Add-Member ScriptMethod Suspend {}
 $script:lastForeground=[IntPtr](1);$script:attachedHost=[IntPtr](1)
 $script:lastPresence=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+3600000
 $script:dataDir=$TestRoot
 $cases=0
+$script:frameWidth=8000;$script:frameHeight=6000
 foreach($follow in @($true,$false)){
   foreach($dpi in @(1.0,1.5,2.0)){
     $script:testDpi=$dpi;$script:followHost=$follow
@@ -78,3 +88,17 @@ foreach($follow in @($true,$false)){
   }
 }
 Write-Output ('PASS: '+$cases+' host/desktop DPI cases preserve 100% size through 20 drags and 20 placement ticks each')
+$script:followHost=$true;$script:testDpi=1.25
+$script:window|Add-Member ScriptMethod Hide {$this.IsVisible=$false}
+$script:window|Add-Member ScriptMethod Show {$this.IsVisible=$true}
+$script:frameWidth=2;$script:frameHeight=2
+$script:lastPosition=$null
+Tick-Widget
+if($script:window.IsVisible){throw 'Transient 2x2 host frame was treated as usable'}
+Assert-SizeAfterNativeMove 'transient 2x2 host'
+if($script:displayScale-ne 1){throw 'Transient host frame changed saved display scale'}
+$script:frameWidth=8000;$script:frameHeight=6000
+Tick-Widget
+if(!$script:window.IsVisible){throw 'Widget did not recover after valid host frame returned'}
+Assert-SizeAfterNativeMove 'host restart recovery'
+Write-Output 'PASS: temporary 2x2 host hides without resizing; valid host restores the existing size'

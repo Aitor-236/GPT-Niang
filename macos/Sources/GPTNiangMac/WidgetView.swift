@@ -7,6 +7,7 @@ struct WidgetView: View {
     @ObservedObject var model: WidgetModel
     let onDrag: (CGSize) -> Void
     let onSettings: () -> Void
+    let onContextMenu: (NSEvent, NSView) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pressed = false
     @State private var near: Double = 0
@@ -49,16 +50,16 @@ struct WidgetView: View {
             }
         }
         .contextMenu {
-            Button("查看額度") { model.showQuota() }
-            Button("刷新額度") { model.refresh() }
-            Button("來一句語錄") { model.showQuote() }
+            Button(model.text("查看額度")) { model.toggleQuota() }
+            Button(model.text("刷新額度")) { model.refresh() }
+            Button(model.text("來一句語錄")) { model.showQuote() }
             Divider()
-            Button("設定…", action: onSettings)
-            Button("退出 GPT 娘") { NSApp.terminate(nil) }
+            Button(model.text("設定…"), action: onSettings)
+            Button(model.text("退出 GPT 娘")) { NSApp.terminate(nil) }
         }
     }
     private func stage(date: Date, phase: Double) -> some View {
-        let mirrored = model.x < 0.5
+        let mirrored = model.facingLeft
         return ZStack(alignment: .topLeading) {
             OriginalBubbleShape().fill(style("surface", phase: phase))
                 .overlay(OriginalBubbleShape().stroke(style("accent", phase: phase), lineWidth: 4))
@@ -76,12 +77,12 @@ struct WidgetView: View {
                 .frame(width: displayedMessage == nil ? 184 : 218, height: displayedMessage == nil ? 115 : 126)
                 .scaleEffect(x: mirrored ? -1 : 1, y: 1)
                 .opacity(text).offset(x: displayedMessage == nil ? 63 : 46, y: displayedMessage == nil ? 22 : 22)
-                .allowsHitTesting(false)
+                .allowsHitTesting(model.bubble).contentShape(Rectangle()).onTapGesture { model.clickBubble() }
             if model.bubble && displayedMessage == nil {
-                Button { model.refresh() } label: { Image(systemName: model.refreshing ? "hourglass" : "arrow.clockwise").font(.system(size: 12)).foregroundStyle(style("ink", phase: phase)) }
+                Button { model.refresh(renewBubble: true) } label: { Image(systemName: model.refreshing ? "hourglass" : "arrow.clockwise").font(.system(size: 12)).foregroundStyle(style("ink", phase: phase)) }
                     .buttonStyle(.plain).disabled(model.refreshing).frame(width: 20, height: 20)
                     .scaleEffect(x: mirrored ? -1 : 1, y: 1).opacity(text).offset(x: 184, y: 20)
-                    .help("立即刷新額度").accessibilityLabel("刷新額度")
+                    .help(model.text("立即刷新額度")).accessibilityLabel(model.text("刷新額度"))
             }
             if let image = model.characterImage {
                 let girl = Image(nsImage: image).resizable().interpolation(.high).scaledToFill().frame(width: 208, height: 208)
@@ -92,20 +93,21 @@ struct WidgetView: View {
                 }
                 .frame(width: 208, height: 208).contentShape(Rectangle())
                 .overlay(CharacterInteraction(onPress: { down in
+                    model.interactionActive = down
                     withAnimation(reduceMotion ? nil : rebound) { pressed = down }
                     model.play(down ? "press" : "release")
                 }, onDrag: { translation in
                     onDrag(translation)
                     if translation == .zero { model.savePreferences() }
-                }, onClick: { model.characterClick() }, onSettings: onSettings))
+                }, onClick: { model.characterClick() }, onMenu: onContextMenu))
                 .onHover { hovering = $0 }.offset(x: 142, y: 142)
-                .accessibilityElement().accessibilityLabel("GPT 娘：點擊查看額度，拖動調整位置")
+                .accessibilityElement().accessibilityLabel(model.text("GPT 娘：點擊查看額度，拖動調整位置"))
                 .accessibilityAddTraits(.isButton).accessibilityAction { model.characterClick() }
             }
-            if hovering {
+            if hovering && !model.hideMenu {
                 Button(action: onSettings) { Image(systemName: "line.3.horizontal").font(.system(size: 15)).foregroundStyle(ink).frame(width: 24, height: 24).background(Color(hex: "EDE7F6"), in: RoundedRectangle(cornerRadius: 6)) }
                     .buttonStyle(.plain).scaleEffect(x: mirrored ? -1 : 1, y: 1).offset(x: 320, y: 162)
-                    .help("掛件設定").accessibilityLabel("掛件設定")
+                    .help(model.text("掛件設定")).accessibilityLabel(model.text("掛件設定"))
             }
         }
         .frame(width: 350, height: 350, alignment: .topLeading)
@@ -122,19 +124,23 @@ struct WidgetView: View {
                     .help(quote)
             } else {
                 VStack(spacing: 2) {
-                    Text("剩餘額度").font(.system(size: 12, weight: .semibold)).foregroundStyle(style("ink", phase: phase))
-                        .help("目前方案：\(model.snapshot.planLabel ?? "未知套餐")")
-                    if model.snapshot.windows.isEmpty {
-                        Text(model.snapshot.error ?? "目前帳戶未提供額度視窗")
+                    Text(quotaTitle(now: now)).font(.system(size: 12, weight: .semibold)).foregroundStyle(style("ink", phase: phase))
+                        .help(quotaDetails(now: now))
+                    if model.snapshot.displayWindows.isEmpty {
+                        Text(model.snapshot.error ?? model.text("目前帳戶未提供額度視窗"))
                             .font(.system(size: 12)).foregroundStyle(Color(hex: "7D6B91")).multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        ForEach(model.snapshot.windows) { window in
+                        ForEach(model.snapshot.displayWindows) { window in
                             VStack(spacing: 1) {
                                 HStack {
-                                    Text(window.title).font(.system(size: 13)).foregroundStyle(Color(hex: "76638D"))
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text(window.title(language: model.language)).font(.system(size: 13))
+                                        Text(model.text(window.expired(at: now) ? "上次 %@%%" : "已用 %@%%", String(format: "%.1f", 100-window.remaining).replacingOccurrences(of: ".0", with: "")))
+                                            .font(.system(size: 9))
+                                    }.foregroundStyle(Color(hex: "76638D"))
                                     Spacer()
-                                    Text(window.expired(at: now) ? "—" : "\(Int(window.remaining.rounded()))%")
+                                    Text(window.expired(at: now) ? "—" : "\(window.percentageText)%")
                                         .font(.system(size: 24, weight: .bold)).monospacedDigit()
                                         .foregroundStyle(quotaStyle(window, now: now, phase: phase))
                                 }.frame(height: 25)
@@ -142,21 +148,42 @@ struct WidgetView: View {
                                     ZStack(alignment: .leading) {
                                         Capsule().fill(Color(hex: "EAE4F3"))
                                         Capsule().fill(quotaStyle(window, now: now, phase: phase))
-                                            .frame(width: geometry.size.width * max(0, min(1, window.remaining / 100)))
+                                            .frame(width: geometry.size.width * (window.expired(at: now) ? 0 : max(0, min(1, window.remaining / 100))))
                                     }
                                 }.frame(height: 4)
-                                Text(window.resetText(at: now, countdown: now.timeIntervalSince(model.sceneStarted) < 2))
+                                Text(window.resetText(at: now, countdown: now.timeIntervalSince(model.sceneStarted) < 2, language: model.language))
                                     .font(.system(size: 11)).foregroundStyle(Color(hex: "7D6B91"))
                                     .frame(maxWidth: .infinity, alignment: .leading).lineLimit(1).minimumScaleFactor(0.85)
                             }
                         }
                         if model.snapshot.stale(at: now) {
-                            Text("舊快照 · 刷新後確認").font(.system(size: 9)).foregroundStyle(.orange)
+                            Text(model.text("舊快照 · 刷新後確認")).font(.system(size: 9)).foregroundStyle(.orange)
                         }
                     }
                 }
             }
         }
+    }
+    private func quotaTitle(now: Date) -> String {
+        if !model.snapshot.ok { return model.text("暂无法读取") }
+        return model.snapshot.stale(at: now) ? model.text("上次剩余额度") : model.text("剩餘額度")
+    }
+    private func quotaDetails(now: Date) -> String {
+        var rows = [model.text("目前方案：%@", model.snapshot.planLabel ?? model.text("未知套餐"))]
+        for window in model.snapshot.validWindows {
+            rows.append("\(window.title(language: model.language))：\(window.percentageText)% · \(window.resetText(at: now, language: model.language))")
+            if window.isIndividual {
+                rows.append(model.text("个人额度，非公司总余额"))
+                if let total = window.total, let used = window.amountUsed, total.isFinite, used.isFinite {
+                    rows.append(model.text("已用 %@ / %@", String(used), String(total)))
+                }
+            }
+        }
+        if let at = model.snapshot.observedAt, at.isFinite {
+            rows.append(model.text("更新时间：%@", Date(timeIntervalSince1970: at/1000).formatted(date: .abbreviated, time: .standard)))
+        }
+        if let error = model.snapshot.error { rows.append(error) }
+        return rows.joined(separator: "\n")
     }
     private func quotaStyle(_ window: QuotaWindow, now: Date, phase: Double) -> AnyShapeStyle {
         if window.expired(at: now) { return AnyShapeStyle(Color(hex: "95889F")) }

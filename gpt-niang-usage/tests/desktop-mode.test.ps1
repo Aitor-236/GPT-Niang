@@ -9,7 +9,7 @@ $tokens=$null;$parseErrors=$null
 $source=[IO.File]::ReadAllText((Join-Path $appDir 'widget.ps1'),[Text.Encoding]::UTF8)
 $ast=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$parseErrors)
 if($parseErrors.Count){throw ($parseErrors|Out-String)}
-foreach($name in @('Write-WidgetJson','Save-Settings','Set-Appearance','Set-WidgetFollowHost')){
+foreach($name in @('Write-WidgetJson','Save-Settings','Set-Appearance','Set-WidgetFollowHost','Set-WidgetPixelSize','Test-WidgetPlacementFrame')){
   $definition=$ast.Find({param($node)$node-is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name-eq $name},$true)
   . ([ScriptBlock]::Create($definition.Extent.Text))
 }
@@ -55,8 +55,10 @@ try{
   function Set-Facing {}
   function Save-Settings {}
   function Tick-Widget {}
+  $script:designWidth=378;$script:designHeight=378
   Set-Appearance
-  if([Math]::Abs($pet.Height-680)-gt 0.01 -or [Math]::Abs($script:displayScale-680/378)-gt 0.001){throw 'Desktop scaling exceeds the work area'}
+  $matrix=[Windows.PresentationSource]::FromVisual($pet).CompositionTarget.TransformToDevice
+  if([Math]::Abs($pet.Height*$matrix.M22-680)-gt 1 -or [Math]::Abs($script:displayScale-680/378)-gt 0.001){throw 'Desktop physical scaling exceeds the work area'}
   Set-WidgetDesktopLayer $petHandle $true
   Set-WidgetFollowHost $true
   if([GptWidgetZOrderNative]::Topmost($petHandle)){throw 'Returning to window mode retained desktop topmost'}

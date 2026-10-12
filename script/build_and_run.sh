@@ -25,6 +25,7 @@ BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Helpers" "$APP_BUNDLE/Contents/Resources/Backend/runtime" "$APP_BUNDLE/Contents/Resources/Backend/.codex-plugin"
 cp "$BIN_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp -R "$BIN_DIR/GPTNiangMac_GPTNiangCore.bundle" "$APP_BUNDLE/Contents/Resources/"
 cp "$BIN_DIR/GPTNiangUpdater" "$APP_BUNDLE/Contents/Helpers/GPTNiangUpdater"
 for runtime in "$ROOT_DIR/gpt-niang-usage/runtime/"*.mjs; do
   if [ "$(basename "$runtime")" != update.mjs ]; then cp "$runtime" "$APP_BUNDLE/Contents/Resources/Backend/runtime/"; fi
