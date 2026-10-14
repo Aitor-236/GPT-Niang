@@ -51,6 +51,9 @@ deb 的安装脚本会把 `chrome-sandbox` 设为 root 所有并加 setuid，沙
 AppImage 用 FUSE 挂载，无法保留 setuid，electron-builder 默认以 `--no-sandbox` 启动。
 两种包都会把共享后端与素材放进 `resources/runtime`、`resources/assets`，不需要额外安装。
 
+AppImage 需要 `libfuse.so.2`：Ubuntu 24.04 起默认只装 fuse3，缺库时请安装 `libfuse2t64`
+（或 `libfuse2`），也可以改用 deb 包——deb 是长期安装的推荐形式。
+
 ## 数据与配置
 
 - 状态目录：`~/.local/share/GPTNiangUsage/state`（`GPT_NIANG_DATA_DIR` 可覆盖）。
@@ -93,3 +96,5 @@ AppImage 用 FUSE 挂载，无法保留 setuid，electron-builder 默认以 `--n
 - **无托盘图标**：GNOME 默认不显示托盘图标，入口放在右键菜单与设置窗口。
 - **缩放换算**：X11 坐标是像素、Electron 窗口 API 是 DIP，两者按显示器缩放换算（本机 1.25）。
   窗口实际像素尺寸会由 Chromium 取整，跟随计算始终以真实尺寸为准。
+- **窗口尺寸微调**：XWayland 下每次真正移动窗口都会被合成器追加约 2px，因此跟随位置按
+  请求尺寸计算（而不是回读的尺寸），并在漂移超过 2px 时重新校正；宿主静止时不做任何移动。

@@ -11,7 +11,6 @@ import {pathToFileURL} from 'node:url';
 
 import {installationFile, writeInstallation, loadSettings} from './config.js';
 import {findNode, runtimeDir} from './runtime.js';
-import {resolveCodexExecutable} from '../../gpt-niang-usage/runtime/usage.mjs';
 
 export const STATUS_FILE = 'status.json';
 export const PRESENCE_FILE = 'presence.json';
@@ -19,17 +18,27 @@ export const PRESENCE_FILE = 'presence.json';
 export function createBackend({dir, env = process.env, packaged = false, log = () => {}}) {
   const runtime = runtimeDir({env, packaged});
   const nodePath = findNode({env});
-  const codexPath = resolveCodexExecutable(null, {env, platform: 'linux'});
-  const configPath = writeInstallation(dir, {codexPath, nodePath});
-  log('backend', {runtime, nodePath, codexPath, configPath});
+  let codexPath = null;
+  let configPath = installationFile(dir);
 
-  let refreshClient = null;
-  async function client() {
-    if (!refreshClient) {
-      const module = await import(pathToFileURL(path.join(runtime, 'refresh-client.mjs')).href);
-      refreshClient = module;
+  // The runtime is a sibling tree during development and an extra resource
+  // beside app.asar once packaged, so its modules are always loaded through
+  // the resolved path instead of a relative import that only works in a
+  // checkout.
+  const modules = new Map();
+  async function loadModule(name) {
+    if (!modules.has(name)) {
+      modules.set(name, await import(pathToFileURL(path.join(runtime, name)).href));
     }
-    return refreshClient;
+    return modules.get(name);
+  }
+
+  async function init() {
+    const {resolveCodexExecutable} = await loadModule('usage.mjs');
+    codexPath = resolveCodexExecutable(null, {env, platform: 'linux'});
+    configPath = writeInstallation(dir, {codexPath, nodePath});
+    log('backend', {runtime, nodePath, codexPath, configPath});
+    return codexPath;
   }
 
   function config() {
@@ -65,8 +74,13 @@ export function createBackend({dir, env = process.env, packaged = false, log = (
     dir,
     runtime,
     nodePath,
-    codexPath,
-    configPath,
+    init,
+    get codexPath() {
+      return codexPath;
+    },
+    get configPath() {
+      return configPath;
+    },
     snapshot,
     readJson: file => readJson(path.join(dir, file)),
     writePresence,
@@ -77,7 +91,7 @@ export function createBackend({dir, env = process.env, packaged = false, log = (
       // The settings file is re-read so a source switch applies immediately.
       fs.writeFileSync(configPath, JSON.stringify(config(), null, 2) + '\n');
       try {
-        const {requestRefresh} = await client();
+        const {requestRefresh} = await loadModule('refresh-client.mjs');
         // The shared default looks for runtime/watch.mjs next to
         // installation.json, which only holds when that file lives in the
         // program root. Ours lives in the data directory, so the worker is

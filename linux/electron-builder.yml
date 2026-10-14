@@ -27,6 +27,12 @@ extraResources:
       - press.wav
       - release.wav
       - quotes.json
+  # runtime/metadata.mjs reads ../.codex-plugin/plugin.json for the reported
+  # version, so the manifest has to sit beside the runtime in the package too.
+  - from: ../gpt-niang-usage/.codex-plugin
+    to: .codex-plugin
+    filter:
+      - plugin.json
 
 linux:
   target:

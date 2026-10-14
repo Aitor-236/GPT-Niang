@@ -119,10 +119,13 @@ function broadcast() {
 
 function widgetPixelSize() {
   if (!state.widget) return {width: 0, height: 0};
-  const [width, height] = state.widget.getSize();
+  // Derived from the requested size rather than the measured one: under
+  // XWayland the compositor nudges the window a little on every move, and
+  // feeding that drift back into the position would move the widget again on
+  // the next tick, growing it a bit more each time.
   return {
-    width: dipsToPixels(width, state.scaleFactor),
-    height: dipsToPixels(height, state.scaleFactor)
+    width: dipsToPixels(defaultWindowSize(state.settings.scale), state.scaleFactor),
+    height: dipsToPixels(defaultWindowSize(state.settings.scale), state.scaleFactor)
   };
 }
 
@@ -130,6 +133,20 @@ function applyWidgetSize() {
   if (!state.widget) return;
   const size = defaultWindowSize(state.settings.scale);
   state.widget.setSize(size, size);
+}
+
+// Under XWayland this desktop grows the window by a pixel or two on every
+// move, which would make the widget creep larger while it follows the chat
+// window. The wanted size is re-asserted whenever the drift becomes visible,
+// so the size stays put without fighting a one-pixel rounding difference.
+function enforceWidgetSize() {
+  if (!state.widget || state.widget.isDestroyed()) return;
+  const desired = defaultWindowSize(state.settings.scale);
+  const [width, height] = state.widget.getSize();
+  if (Math.abs(width - desired) > 2 || Math.abs(height - desired) > 2) {
+    log('widget-size-correction', {dip: [width, height], desired});
+    state.widget.setSize(desired, desired);
+  }
 }
 
 async function showWidget() {
@@ -178,10 +195,13 @@ function followerPort() {
     getWidgetSize: widgetPixelSize,
     move: (x, y) => {
       if (!state.widget || state.widget.isDestroyed()) return;
+      if (process.env.GPT_NIANG_DEBUG) log('move', {x, y, dip: state.widget.getSize()});
+      enforceWidgetSize();
       state.widget.setPosition(pixelsToDips(x, state.scaleFactor), pixelsToDips(y, state.scaleFactor));
     },
     moveBeforeShow: (x, y) => {
       if (!state.widget || state.widget.isDestroyed()) return;
+      enforceWidgetSize();
       state.widget.setPosition(pixelsToDips(x, state.scaleFactor), pixelsToDips(y, state.scaleFactor));
     },
     setVisible: value => {
@@ -189,7 +209,10 @@ function followerPort() {
       else hideWidget();
     },
     applyAbove: () => {
-      if (state.widget && !state.widget.isDestroyed()) state.widget.setAlwaysOnTop(true);
+      if (state.widget && !state.widget.isDestroyed()) {
+        if (process.env.GPT_NIANG_DEBUG) log('above-applied', {dip: state.widget.getSize()});
+        state.widget.setAlwaysOnTop(true);
+      }
     },
     onVisibility: () => {
       writePresence();
@@ -392,6 +415,11 @@ async function createWidgetWindow() {
     scaleFactor: state.scaleFactor,
     requested: size
   });
+  // A surprising window size is worth recording: the follow maths reads the
+  // real size every tick, so a growing window silently moves the widget.
+  state.widget.on('resize', () => {
+    log('widget-resize', {dip: state.widget.getSize(), content: state.widget.getContentSize()});
+  });
   state.widget.on('closed', () => {
     state.widget = null;
   });
@@ -500,6 +528,7 @@ if (!app.requestSingleInstanceLock()) {
     state.dir = dataDir();
     state.settings = loadSettings(state.dir);
     state.backend = createBackend({dir: state.dir, packaged: app.isPackaged, log});
+    await state.backend.init();
     state.scaleFactor = Number(process.env.GPT_NIANG_PIXEL_SCALE) || screen.getPrimaryDisplay().scaleFactor || 1;
     state.builtinQuotes = readBuiltinQuotes(path.join(assetRoot(), 'quotes.json'));
     state.follower = createHostFollower(followerPort(), {
