@@ -4,13 +4,16 @@ import assert from 'node:assert/strict';
 import {
   clampToMonitors,
   codexWindowCandidates,
+  fitSize,
   followPosition,
   hostIsVisible,
   intersects,
+  pickMonitor,
   pickHost,
   samePoint,
   sizeDriftExceeds,
   snappedAnchor,
+  usableArea,
   visibleArea
 } from '../src/geometry.js';
 
@@ -111,4 +114,35 @@ test('sizeDriftExceeds tolerates rounding and catches real growth', () => {
   assert.equal(sizeDriftExceeds({width: 2842, height: 2635}, 438, 6), true);
   assert.equal(sizeDriftExceeds(null, 438, 6), false);
   assert.equal(sizeDriftExceeds({width: 10, height: 10}, Number.NaN, 6), false);
+});
+
+// Mirrors Placement.usableArea/frame on macOS: follow mode is confined to the
+// part of the chat window that is on a monitor, and the widget shrinks to fit
+// rather than hanging outside the window.
+test('usableArea is the chat window intersected with its monitor', () => {
+  const monitors = [{x: 0, y: 0, width: 2560, height: 1440}];
+  assert.deepEqual(usableArea({x: 100, y: 80, width: 1000, height: 800}, monitors), {x: 100, y: 80, width: 1000, height: 800});
+  assert.deepEqual(usableArea({x: -120, y: -60, width: 1400, height: 900}, monitors), {x: 0, y: 0, width: 1280, height: 840});
+  // No overlap at all: better visible outside the window than invisible inside.
+  assert.deepEqual(usableArea({x: -3000, y: 0, width: 1000, height: 800}, monitors), monitors[0]);
+  // Without monitor information the chat window is all we know.
+  assert.deepEqual(usableArea({x: 5, y: 5, width: 500, height: 500}, []), {x: 5, y: 5, width: 500, height: 500});
+  assert.equal(usableArea(null, monitors), null);
+});
+
+test('pickMonitor chooses the monitor the rect overlaps most', () => {
+  const monitors = [{x: 0, y: 0, width: 1000, height: 1000}, {x: 1000, y: 0, width: 1000, height: 1000}];
+  assert.deepEqual(pickMonitor({x: 900, y: 100, width: 400, height: 400}, monitors), monitors[1]);
+  assert.deepEqual(pickMonitor({x: 100, y: 100, width: 400, height: 400}, monitors), monitors[0]);
+  assert.equal(pickMonitor(null, monitors), null);
+  assert.deepEqual(pickMonitor({x: 10, y: 10, width: 100, height: 100}, []), null);
+});
+
+test('fitSize shrinks the widget to the area it has to live in', () => {
+  assert.deepEqual(fitSize({width: 350, height: 350}, {width: 1000, height: 800}), {width: 350, height: 350});
+  assert.deepEqual(fitSize({width: 350, height: 350}, {width: 300, height: 800}), {width: 300, height: 350});
+  assert.deepEqual(fitSize({width: 438, height: 438}, {width: 420, height: 380}, 0), {width: 420, height: 380});
+  // The allowance keeps the rounded-up pixel size a little clear of the edge.
+  assert.deepEqual(fitSize({width: 438, height: 438}, {width: 420, height: 380}, 4), {width: 416, height: 376});
+  assert.deepEqual(fitSize({width: 350, height: 350}, null), {width: 350, height: 350});
 });

@@ -22,12 +22,13 @@ import {
   setTransientFor
 } from './x11.js';
 import {
-  clampToMonitors,
   codexWindowCandidates,
+  fitSize,
   followPosition,
   hostIsVisible,
   pickHost,
-  samePoint
+  samePoint,
+  usableArea
 } from './geometry.js';
 
 export const FOLLOW_DEFAULTS = {
@@ -37,6 +38,11 @@ export const FOLLOW_DEFAULTS = {
   readinessSamples: 2,
   anchor: 'left',
   offsets: {left: 12, right: 12, bottom: 12},
+  // Kept inside the chat window rather than hanging out of it: the allowance
+  // covers Chromium rounding the window's pixel size up, and the minimum is the
+  // smallest the design may be rendered at before the widget gives up.
+  sizeAllowance: 4,
+  minSize: 0,
   above: true
 };
 
@@ -75,6 +81,8 @@ export function createHostFollower(port, options = {}) {
   let visible = false;
   let aboveApplied = false;
   let lastPosition = null;
+  let usable = null;
+  let reportedSize = null;
   let immediatePending = false;
   let forceDiscovery = false;
   let watchedId = null;
@@ -228,11 +236,40 @@ export function createHostFollower(port, options = {}) {
       if (stableSamples < settings.readinessSamples) stableSamples += 1;
 
       if (!settings.above) aboveApplied = true;
+      // macOS parity (Placement.usableArea + frame): the widget lives inside
+      // host ∩ monitor and shrinks to fit when the chat window is smaller than
+      // it is, instead of hanging outside the window.
+      usable = usableArea(host, bounds());
+      // Diagnostic (GPT_NIANG_FIT_TEST=WxH): pretend the chat window is that
+      // small, so the shrink can be checked without resizing a real window.
+      if (settings.fitTest) {
+        usable = {
+          x: usable.x,
+          y: usable.y,
+          width: Math.min(usable.width, settings.fitTest.width),
+          height: Math.min(usable.height, settings.fitTest.height)
+        };
+      }
       const size = port.getWidgetSize();
-      const rect = clampToMonitors(
-        {...followPosition(host, size, {anchor: settings.anchor, ...settings.offsets}), ...size},
-        bounds()
-      );
+      // The canvas is square, so the tighter of the two dimensions is what the
+      // window gets; fitting them independently would make the position maths
+      // assume a wider window than the one that is really there.
+      const fittedArea = fitSize(size, usable, settings.sizeAllowance);
+      const side = Math.min(fittedArea.width, fittedArea.height);
+      const fitted = size.width === size.height ? {width: side, height: side} : fittedArea;
+      if (settings.minSize > 0 && (fitted.width < settings.minSize || fitted.height < settings.minSize)) {
+        const tooSmall = now();
+        if (missingSince === null) missingSince = tooSmall;
+        if (tooSmall - missingSince >= settings.graceMs) hide('host-too-small');
+        return;
+      }
+      // Reported on change, not just when it differs from the configured size:
+      // the widget has to grow back once the chat window can hold it again.
+      if (!reportedSize || fitted.width !== reportedSize.width || fitted.height !== reportedSize.height) {
+        reportedSize = fitted;
+        port.setWidgetSize?.({width: fitted.width, height: fitted.height});
+      }
+      const rect = {...followPosition(usable, fitted, {anchor: settings.anchor, ...settings.offsets}), ...fitted};
       const position = {x: rect.x, y: rect.y};
 
       // Move before showing so the first frame is already in place.
@@ -300,6 +337,11 @@ export function createHostFollower(port, options = {}) {
     },
     get host() {
       return host;
+    },
+    // The area the widget was last placed in (host ∩ monitor). Drag offsets are
+    // measured from this, so the drop position survives the round trip.
+    get usable() {
+      return usable;
     },
     get visible() {
       return visible;

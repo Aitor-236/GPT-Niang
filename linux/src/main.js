@@ -133,6 +133,10 @@ const state = {
   widgetXid: null,
   scaleFactor: 1,
   monitors: [],
+  // The size the follow loop reports as fitting the chat window. Null means
+  // "use the configured scale": desktop mode never shrinks the widget.
+  fitDip: null,
+  appliedDip: null,
   visible: false,
   snapshot: null,
   snapshotKey: null,
@@ -187,6 +191,9 @@ function appState() {
     scaleRange: {min: SCALE_MIN, max: SCALE_MAX},
     x11: Boolean(state.widgetXid),
     eventFollow: Boolean(state.connection?.isConnected()),
+    // The renderer draws the 378px design stage into a window of this many DIP,
+    // so the canvas scales with a fitted (smaller) window.
+    windowDip: effectiveWidgetDip(),
     visible: state.visible
   };
 }
@@ -198,16 +205,27 @@ function broadcast() {
   }
 }
 
+// The size the widget is actually drawn at: the configured scale, unless the
+// follow loop reports that the chat window is too small to hold it.
+function effectiveWidgetDip() {
+  return state.fitDip ?? defaultWindowSize(state.settings.scale);
+}
+
 function widgetPixelSize() {
   if (!state.widget) return {width: 0, height: 0};
   // Derived from the requested size rather than the measured one: under
   // XWayland the compositor nudges the window a little on some moves, and
   // feeding that drift back into the position would move the widget again on
   // the next tick, growing it a bit more each time.
-  return {
-    width: dipsToPixels(defaultWindowSize(state.settings.scale), state.scaleFactor),
-    height: dipsToPixels(defaultWindowSize(state.settings.scale), state.scaleFactor)
-  };
+  const size = dipsToPixels(effectiveWidgetDip(), state.scaleFactor);
+  return {width: size, height: size};
+}
+
+// What the user's scale alone asks for; the follow loop fits this to the chat
+// window and reports back through setWidgetSize.
+function configuredPixelSize() {
+  const size = dipsToPixels(defaultWindowSize(state.settings.scale), state.scaleFactor);
+  return {width: size, height: size};
 }
 
 // `resizable: false` publishes the window's minimum *and* maximum size as
@@ -220,7 +238,9 @@ function widgetPixelSize() {
 // watchdog below can always put it back.
 function applyWidgetSize() {
   if (!state.widget || state.widget.isDestroyed()) return;
-  const size = defaultWindowSize(state.settings.scale);
+  const size = effectiveWidgetDip();
+  if (state.appliedDip === size && state.widget.getSize()[0] === size) return;
+  state.appliedDip = size;
   state.widget.setMinimumSize(size, size);
   state.widget.setMaximumSize(size, size);
   state.widget.setSize(size, size);
@@ -237,6 +257,12 @@ function monitorRects() {
 
 function refreshMonitors() {
   state.monitors = monitorRects();
+}
+
+// "WxH", for the diagnostic that pretends the chat window is smaller than it is.
+function parseSize(value) {
+  const match = /^(\d+)\s*[xX]\s*(\d+)$/.exec(String(value ?? '').trim());
+  return match ? {width: Number(match[1]), height: Number(match[2])} : null;
 }
 
 async function measuredWidgetRect() {
@@ -264,7 +290,7 @@ async function repairWidgetSize({force = false} = {}) {
   if (!force && stamp - state.sizeGuard.lastAt < SIZE_CORRECTION_INTERVAL_MS) return;
   const actual = await measuredWidgetRect();
   if (!actual) return;
-  const desiredPixels = dipsToPixels(defaultWindowSize(state.settings.scale), state.scaleFactor);
+  const desiredPixels = dipsToPixels(effectiveWidgetDip(), state.scaleFactor);
   if (!sizeDriftExceeds(actual, desiredPixels, SIZE_DRIFT_TOLERANCE)) return;
   state.sizeGuard.lastAt = stamp;
   state.sizeGuard.corrections += 1;
@@ -284,7 +310,7 @@ function watchOwnWindow() {
   state.unwatchOwn?.();
   state.unwatchOwn = state.connection.watchWindow(state.widgetXid, change => {
     if (change?.kind !== 'configure') return;
-    const desiredPixels = dipsToPixels(defaultWindowSize(state.settings.scale), state.scaleFactor);
+    const desiredPixels = dipsToPixels(effectiveWidgetDip(), state.scaleFactor);
     if (!sizeDriftExceeds(change, desiredPixels, SIZE_DRIFT_TOLERANCE)) return;
     log('widget-configure-drift', {width: change.width, height: change.height, desiredPixels});
     void repairWidgetSize();
@@ -498,7 +524,19 @@ async function verifyX11() {
 function followerPort() {
   return {
     getWidgetId: () => state.widgetXid ?? '0x0',
-    getWidgetSize: widgetPixelSize,
+    getWidgetSize: configuredPixelSize,
+    // The follow loop keeps the widget inside the chat window, which can mean
+    // drawing it smaller than the configured scale. The window and the renderer
+    // both follow that size; the size watchdog expects it as well, so a fitted
+    // window is not mistaken for drift.
+    setWidgetSize: ({width, height}) => {
+      const dip = pixelsToDips(Math.min(width, height), state.scaleFactor);
+      if (dip === state.fitDip) return;
+      state.fitDip = dip;
+      log('widget-fit', {pixels: {width, height}, dip});
+      applyWidgetSize();
+      broadcast();
+    },
     move: (x, y) => {
       if (!state.widget || state.widget.isDestroyed()) return;
       if (process.env.GPT_NIANG_DEBUG) log('move', {x, y, dip: state.widget.getSize()});
@@ -545,6 +583,10 @@ function applyMode() {
   if (!state.follower || !state.widget) return;
   if (state.settings.mode === 'desktop') {
     state.follower.stop();
+    // The desktop widget is free on the screen, so it goes back to the size the
+    // user chose: only follow mode has to fit inside the chat window.
+    state.fitDip = null;
+    applyWidgetSize();
     state.widget.setAlwaysOnTop(Boolean(state.settings.desktopTopmost));
     const position = state.settings.desktopPosition;
     if (position) state.widget.setPosition(position.x, position.y);
@@ -569,6 +611,8 @@ async function updateSettings(patch, {silent = false} = {}) {
   const previous = state.settings;
   state.settings = saveSettings(state.dir, {...state.settings, ...patch});
   if (patch.scale !== undefined && state.settings.scale !== previous.scale) {
+    // The follow loop re-fits from the new scale on its next tick.
+    state.fitDip = null;
     applyWidgetSize();
     state.follower?.reposition();
   }
@@ -602,7 +646,9 @@ function persistDragResult() {
     void updateSettings({desktopPosition: {x: dipX, y: dipY}});
     return;
   }
-  const host = state.follower?.host;
+  // Offsets are measured from the area the widget is placed in (the chat window
+  // intersected with its monitor), so the drop lands where it was let go.
+  const host = state.follower?.usable ?? state.follower?.host;
   if (!host) return;
   const anchor = snappedAnchor(pixelX, size.width, {x: host.x, y: host.y, width: host.width, height: host.height});
   const insets = {
@@ -939,7 +985,12 @@ async function start() {
     followHz: state.settings.followHz,
     discoveryIntervalMs: state.settings.discoveryIntervalMs,
     source: state.source,
-    tools: followTools(state.connection)
+    tools: followTools(state.connection),
+    // Chromium rounds the window's pixel size up to the device grid; keep the
+    // fitted window a couple of pixels clear of the chat window's edge.
+    sizeAllowance: Math.max(2, dipsToPixels(2, state.scaleFactor)),
+    fitTest: parseSize(process.env.GPT_NIANG_FIT_TEST),
+    minSize: dipsToPixels(defaultWindowSize(SCALE_MIN), state.scaleFactor)
   });
   handleAssetProtocol();
   registerIpc();

@@ -17,10 +17,14 @@ function harness({host = HOST_RECT, viewable = true, hostId = '0xe00004'} = {}) 
   const port = {
     id: WIDGET_ID,
     moves: [],
+    sizes: [],
     visibility: [],
     events: [],
     getWidgetId: () => WIDGET_ID,
     getWidgetSize: () => ({width: 350, height: 350}),
+    setWidgetSize(size) {
+      this.sizes.push(size);
+    },
     move(x, y) {
       this.moves.push({x, y});
     },
@@ -109,6 +113,68 @@ test('follower tracks host movement', async () => {
   await wait(120);
   follower.stop();
   assert.equal(port.moves.at(-1).x, before + 100 + 12);
+});
+
+// Follow mode never leaves the chat window: the widget is placed inside
+// host ∩ monitor, and shrinks when the window cannot hold it (the macOS build
+// does the same in Placement.frame via `min(size, area)`).
+test('the widget keeps its configured size while the chat window can hold it', async () => {
+  const {port, tools} = harness();
+  const follower = createHostFollower(port, {followHz: 60, discoveryIntervalMs: 0, tools});
+  follower.start();
+  await wait(150);
+  follower.stop();
+  assert.deepEqual(port.sizes.at(-1), {width: 350, height: 350}, 'the configured size is kept');
+  assert.equal(port.sizes.length, 1, 'the size is reported when it changes, not on every tick');
+  const last = port.moves.at(-1);
+  assert.ok(last.x >= HOST_RECT.x && last.x + 350 <= HOST_RECT.x + HOST_RECT.width);
+  assert.ok(last.y >= HOST_RECT.y && last.y + 350 <= HOST_RECT.y + HOST_RECT.height);
+});
+
+test('the widget shrinks to stay inside a chat window that is smaller than it is', async () => {
+  // The harness draws the widget on a 350px canvas, so 300x280 cannot hold it.
+  const small = {x: 120, y: 140, width: 300, height: 280};
+  const {port, tools} = harness({host: small});
+  const follower = createHostFollower(port, {followHz: 60, discoveryIntervalMs: 0, tools, sizeAllowance: 0});
+  follower.start();
+  await wait(150);
+  follower.stop();
+  // Square canvas: the shorter side (280) decides.
+  assert.deepEqual(port.sizes.at(-1), {width: 280, height: 280});
+  const last = port.moves.at(-1);
+  assert.ok(last.x >= small.x, 'left edge stays inside the window');
+  assert.ok(last.y >= small.y, 'top edge stays inside the window');
+  assert.ok(last.x + 280 <= small.x + small.width, 'right edge stays inside the window');
+  assert.ok(last.y + 280 <= small.y + small.height, 'bottom edge stays inside the window');
+});
+
+test('the widget grows back once the chat window can hold it again', async () => {
+  const small = {x: 120, y: 140, width: 300, height: 280};
+  const {port, tools, state} = harness({host: small});
+  const follower = createHostFollower(port, {followHz: 60, discoveryIntervalMs: 0, tools, sizeAllowance: 0});
+  follower.start();
+  await wait(120);
+  assert.deepEqual(port.sizes.at(-1), {width: 280, height: 280});
+
+  state.hosts.push({x: 120, y: 140, width: 1200, height: 900});
+  await wait(180);
+  follower.stop();
+  assert.deepEqual(port.sizes.at(-1), {width: 350, height: 350}, 'the configured size comes back');
+});
+
+test('a chat window that hangs off the monitor only uses its visible part', async () => {
+  // The harness reports one monitor at (0,0,2560,1440).
+  const host = {x: -120, y: -60, width: 1400, height: 900};
+  const {port, tools} = harness({host});
+  const follower = createHostFollower(port, {followHz: 60, discoveryIntervalMs: 0, tools, sizeAllowance: 0});
+  follower.start();
+  await wait(150);
+  follower.stop();
+  const visible = {x: 0, y: 0, width: 1280, height: 840};
+  assert.deepEqual(follower.usable, visible);
+  const last = port.moves.at(-1);
+  assert.ok(last.x >= visible.x && last.x + 350 <= visible.x + visible.width);
+  assert.ok(last.y >= visible.y && last.y + 350 <= visible.y + visible.height);
 });
 
 // Event mode: the X server pushes ConfigureNotify for the followed window, so

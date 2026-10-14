@@ -57,6 +57,43 @@ export function hostIsVisible(host, monitors) {
   return visibleArea(host, monitors) > 0;
 }
 
+// The monitor a rect sits on: the one it overlaps most, which is how the
+// Windows build's MonitorFromPoint(..., MONITOR_DEFAULTTONEAREST) resolves a
+// widget that straddles an edge.
+export function pickMonitor(rect, monitors) {
+  if (!rect || monitors.length === 0) return null;
+  let best = null;
+  for (const monitor of monitors) {
+    const overlap = intersects(rect, monitor);
+    const area = overlap ? overlap.width * overlap.height : 0;
+    if (!best || area > best.area) best = {monitor, area};
+  }
+  return best && best.area > 0 ? best.monitor : monitors[0];
+}
+
+// Mirrors the macOS build's Placement.usableArea: the widget may only live
+// inside the part of the chat window that is on a monitor, and if the two do
+// not overlap at all the monitor wins (better to be visible outside the window
+// than invisible inside it).
+export function usableArea(host, monitors) {
+  if (!host) return null;
+  const monitor = pickMonitor(host, monitors);
+  if (!monitor) return host;
+  return intersects(host, monitor) ?? monitor;
+}
+
+// Mirrors Placement.frame's `min(size, area)`: when the chat window cannot hold
+// the widget, the widget gets smaller rather than hanging outside it. The
+// allowance covers Chromium rounding the window's pixel size up to the device
+// grid (350 DIP is 438 px here, but the real window is 440).
+export function fitSize(size, area, allowance = 0) {
+  if (!area) return size;
+  return {
+    width: Math.max(1, Math.min(size.width, Math.round(area.width) - allowance)),
+    height: Math.max(1, Math.min(size.height, Math.round(area.height) - allowance))
+  };
+}
+
 // Mirrors the Windows build: `left` / `right` / `bottom` are the user's drag
 // offsets from the matching host edge, and the anchor decides which side they
 // are measured from.

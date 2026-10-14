@@ -26,6 +26,7 @@ const RELEASE_SOUND = 'gpt-asset://release.wav';
 
 let settings = null;
 let snapshot = null;
+let windowSize = 0;
 let view = 'collapsed';
 let hideTimer = null;
 let lastQuote = '';
@@ -219,8 +220,13 @@ function headerTitle() {
 }
 
 function applyScale() {
+  // The window can be smaller than the configured scale asks for: the follow
+  // loop shrinks it so that the whole widget stays inside the chat window. The
+  // design stage is 378px and the window is `windowDip` DIP, so the canvas
+  // scales with the window it was actually given.
   const scale = Number(settings?.scale) || 1;
-  stage.style.setProperty('--ui-scale', String(scale * (DESIGN_WINDOW / DESIGN_STAGE)));
+  const windowDip = Number(windowSize) > 0 ? Number(windowSize) : DESIGN_WINDOW * scale;
+  stage.style.setProperty('--ui-scale', String(windowDip / DESIGN_STAGE));
 }
 
 function play(audio) {
@@ -276,6 +282,7 @@ function advance() {
 function applyState(payload) {
   settings = payload.settings;
   snapshot = payload.snapshot;
+  windowSize = Number(payload.windowDip) || 0;
   stage.classList.toggle('facing-left', settings?.anchor === 'right');
   applyScale();
   render();

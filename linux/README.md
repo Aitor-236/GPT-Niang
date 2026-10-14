@@ -77,6 +77,7 @@ AppImage 需要 `libfuse.so.2`：Ubuntu 24.04 起默认只装 fuse3，缺库时�
 | `GPT_NIANG_RUNTIME_DIR` / `GPT_NIANG_ASSETS_DIR` | 覆盖共享后端与素材位置 |
 | `GPT_NIANG_DEBUG=1` | 把运行日志打到 stderr |
 | `GPT_NIANG_POINTER_TEST=x,y` | 用固定的 DIP 坐标代替真实指针，便于验证点击穿透（配合 `GPT_NIANG_DEBUG=1` 看命中日志） |
+| `GPT_NIANG_FIT_TEST=宽x高` | 让跟随逻辑把 Codex 窗口当成这个像素尺寸，便于验证"窗口太小就缩小"的行为 |
 | `GPT_NIANG_OPEN_SETTINGS=1` | 启动时打开设置窗口 |
 
 ## 已实现与暂缓
@@ -85,6 +86,10 @@ AppImage 需要 `libfuse.so.2`：Ubuntu 24.04 起默认只装 fuse3，缺库时�
 透明区域点击穿透、语录切换、拖动与边缘吸附、60%–250% 缩放、
 桌面模式与置顶、右键菜单、设置窗口、开机自启、双数据源（官方额度与 provider 余额）、
 单实例、宿主最小化/隐藏时自动收起。
+
+跟随位置始终待在 Codex 窗口内：可用区取"Codex 窗口 ∩ 所在显示器"（与 macOS 端
+`Placement.usableArea` 一致），窗口比挂件还小时挂件按较小的那一维等比缩小
+（`min(尺寸, 可用区)`，设计下限 60%），窗口变大后再恢复。桌面模式不受此限制。
 
 暂缓（接口已留出，尚未实现）：内置自动更新与回滚、Codex 插件市场注册
 （`get_codex_usage` MCP 工具）、聊天速度面板。
@@ -109,3 +114,5 @@ AppImage 需要 `libfuse.so.2`：Ubuntu 24.04 起默认只装 fuse3，缺库时�
   `forward`），因此主进程以 60Hz 采样指针位置，指针进入挂件矩形后才请渲染进程做命中测试
   （角色按贴图 alpha 逐像素判定，气泡只在其轮廓/文字/按钮上命中），其余透明区域一律穿透。
   拖动与右键菜单打开时强制保持可交互。设置里可整体关闭穿透。
+- **跟随缩放的取整**：Chromium 会把窗口的像素尺寸向上取整到设备栅格（350 DIP 在本机是
+  438px，实际窗口 440px），因此可用区会比挂件多留几像素余量，保证缩小时不会溢出。
