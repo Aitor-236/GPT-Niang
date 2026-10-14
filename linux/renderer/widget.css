@@ -240,6 +240,10 @@ body {
   border-radius: 50%;
   background: #ffffff;
   border: 4px solid var(--ink);
+  /* The tails belong to the bubble: they pop in shortly after it opens and
+     disappear with it, matching the staggered WPF animation. */
+  transform-origin: 50% 50%;
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1) 120ms, opacity 160ms linear 120ms;
 }
 
 #tail-near {
@@ -251,6 +255,16 @@ body {
   border-radius: 50%;
   background: #ffffff;
   border: 4px solid var(--ink);
+  transform-origin: 50% 50%;
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1) 180ms, opacity 160ms linear 180ms;
+}
+
+#stage.collapsed #tail,
+#stage.collapsed #tail-near {
+  transform: scale(0.2);
+  opacity: 0;
+  transition-duration: 120ms;
+  transition-delay: 0ms;
 }
 
 #girl {

@@ -97,6 +97,8 @@ const READ_QUOTA = [
   "  }));",
   "  return {",
   "    header: document.getElementById('header').textContent,",
+  "    tailOpacity: getComputedStyle(document.getElementById('tail')).opacity,",
+  "    nearTailOpacity: getComputedStyle(document.getElementById('tail-near')).opacity,",
   "    quotaVisible: !document.getElementById('quota-view').classList.contains('hidden'),",
   "    quoteVisible: !document.getElementById('quote-view').classList.contains('hidden'),",
   "    rows",
@@ -147,7 +149,7 @@ app.whenReady().then(async () => {
         autostart: false
       });
       const collapsed = await window.webContents.executeJavaScript(
-        'applyState(' + payload + '); ({header: document.getElementById("header").textContent, bubbleHidden: document.getElementById("bubble").classList.contains("hidden")})'
+        'applyState(' + payload + '); ({header: document.getElementById("header").textContent, bubbleHidden: document.getElementById("bubble").classList.contains("hidden"), tailOpacity: getComputedStyle(document.getElementById("tail")).opacity})'
       );
       await window.webContents.executeJavaScript('document.getElementById("girl").click()');
       await wait(320);

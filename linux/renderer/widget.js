@@ -172,6 +172,8 @@ function play(audio) {
 
 function show(next) {
   view = next;
+  // The bubble tails are part of the bubble, not of the character.
+  stage.classList.toggle('collapsed', view === 'collapsed');
   if (view === 'collapsed') {
     bubble.classList.remove('opening');
     bubble.classList.add('closing');
