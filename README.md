@@ -67,8 +67,22 @@ node /Applications/GPTNiangMac.app/Contents/Resources/Backend/runtime/detect-pla
 | --- | --- | --- |
 | Windows 10 / 11 | [gpt-niang-usage-widget-v1.3.4-windows.zip](https://github.com/T7moris/GPT-Niang/releases/download/v1.3.4/gpt-niang-usage-widget-v1.3.4-windows.zip) | 解压后运行 `安装GPT娘.cmd` |
 | macOS 13+，Apple Silicon / Intel | [gpt-niang-usage-widget-v1.3.4-macos-universal.zip](https://github.com/T7moris/GPT-Niang/releases/download/v1.3.4/gpt-niang-usage-widget-v1.3.4-macos-universal.zip) | 解压后打开 `GPTNiangMac.app` |
+| Linux（X11/XWayland） | 源码构建，暂无安装包 | 见 [Linux 使用说明](linux/README.md) |
 
-GitHub 自动附带的 **Source code** 和 **Code → Download ZIP** 是源码，不是上述安装包。Mac 下载包内已包含通用应用，不需要 Swift 或 Xcode；Intel 和较旧 macOS 的实际界面表现仍需真机验证。尚无 Linux 版本。
+GitHub 自动附带的 **Source code** 和 **Code → Download ZIP** 是源码，不是上述安装包。Mac 下载包内已包含通用应用，不需要 Swift 或 Xcode；Intel 和较旧 macOS 的实际界面表现仍需真机验证。Linux 尚未提供安装包，需从源码构建（`linux/`，Electron 界面 + 共享 Node 后端）。
+
+### Linux 安装
+
+Linux 端复用同一份额度后端、角色、音效与语录，界面为 Electron 实现，跟随功能要求会话运行在 X11/XWayland 下：
+
+```sh
+cd linux
+npm install          # 需要网络下载 Electron
+npm run fix-sandbox  # 首次需要：给 chrome-sandbox 加 setuid（要 sudo）
+npm start            # 已自带 --ozone-platform=x11
+```
+
+前置条件：Node.js 20 或更新版本、已登录的 Codex 桌面端、X11/XWayland 会话。`npm run dist` 可产出 AppImage 与 deb；自检、环境变量、已知限制与暂缓功能见 [Linux 使用说明](linux/README.md)。
 
 ### Windows 安装
 

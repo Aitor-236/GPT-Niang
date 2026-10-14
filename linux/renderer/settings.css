@@ -1,0 +1,140 @@
+:root {
+  --ink: #4b3f63;
+  --ink-soft: #6f6486;
+  --accent: #9b86c1;
+  --accent-strong: #745a98;
+  --surface: #faf8fd;
+  --line: #e4dcf1;
+}
+
+body {
+  margin: 0;
+  padding: 0 22px 26px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 0 12px;
+}
+
+header img {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+header p {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+section {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.field > span {
+  min-width: 62px;
+  color: var(--ink-soft);
+}
+
+.field input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent-strong);
+}
+
+output {
+  min-width: 48px;
+  text-align: right;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+select,
+textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.presets,
+.row-buttons {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+button {
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f3effa;
+  color: var(--accent-strong);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #eae2f7;
+}
+
+button.danger {
+  color: #a33a52;
+  background: #fdeef1;
+  border-color: #f6d5dd;
+}
+
+.hint,
+.status {
+  margin: 6px 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  white-space: pre-wrap;
+}

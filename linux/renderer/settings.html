@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src gpt-asset:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>GPT 娘 设置</title>
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <header>
+      <img src="gpt-asset://gpt-dragon-niang-bust.png" alt="" />
+      <div>
+        <h1>GPT 娘</h1>
+        <p id="version">版本 —</p>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <h2>显示</h2>
+        <label class="field">
+          <span>大小</span>
+          <input id="scale" type="range" min="0.6" max="2.5" step="0.05" />
+          <output id="scale-value">100%</output>
+        </label>
+        <div class="presets">
+          <button type="button" data-scale="0.8">80%</button>
+          <button type="button" data-scale="1">100%</button>
+          <button type="button" data-scale="1.4">140%</button>
+        </div>
+        <label class="check"><input id="mode-desktop" type="checkbox" /> 整个桌面自由拖动（关闭则跟随 Codex 窗口）</label>
+        <label class="check"><input id="topmost" type="checkbox" /> 桌面模式下始终置顶</label>
+      </section>
+
+      <section>
+        <h2>声音与点击</h2>
+        <label class="check"><input id="sound-enabled" type="checkbox" /> 播放音效</label>
+        <label class="field">
+          <span>音量</span>
+          <input id="volume" type="range" min="0" max="1" step="0.05" />
+          <output id="volume-value">80%</output>
+        </label>
+        <label class="check"><input id="click-advance" type="checkbox" /> 点击依次切换额度与语录（关闭后仅切换额度）</label>
+      </section>
+
+      <section>
+        <h2>额度数据源</h2>
+        <label class="field">
+          <span>来源</span>
+          <select id="quota-source">
+            <option value="auto">自动（官方额度优先，API Key 登录时读 provider 余额）</option>
+            <option value="codex">仅 Codex 官方额度</option>
+            <option value="deepseek">仅 DeepSeek 余额</option>
+          </select>
+        </label>
+        <p id="quota-status" class="status">—</p>
+        <button type="button" id="refresh">立即刷新</button>
+      </section>
+
+      <section>
+        <h2>语录</h2>
+        <p class="hint">每行一句；留空表示使用内置语录。恢复内置前会自动备份当前文件。</p>
+        <textarea id="quotes" rows="6" spellcheck="false"></textarea>
+        <div class="row-buttons">
+          <button type="button" id="quotes-save">保存语录</button>
+          <button type="button" id="quotes-reset">恢复内置语录</button>
+        </div>
+        <p id="quotes-status" class="status">—</p>
+      </section>
+
+      <section>
+        <h2>启动与退出</h2>
+        <label class="check"><input id="autostart" type="checkbox" /> 登录时自动启动</label>
+        <div class="row-buttons">
+          <button type="button" id="quit" class="danger">退出 GPT 娘</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>运行环境</h2>
+        <p class="status" id="environment">—</p>
+      </section>
+    </main>
+
+    <script src="settings.js"></script>
+  </body>
+</html>

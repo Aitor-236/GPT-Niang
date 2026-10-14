@@ -1,0 +1,31 @@
+{
+  "name": "gpt-niang-usage-linux",
+  "productName": "GPT 娘",
+  "version": "1.3.4",
+  "description": "GPT 娘 Linux 桌面挂件：跟随 Codex 窗口显示额度与语录",
+  "author": {
+    "name": "Aitor",
+    "email": "aitor.x@outlook.com"
+  },
+  "homepage": "https://github.com/Aitor-236/GPT-Niang",
+  "desktopName": "gpt-niang-usage.desktop",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron --ozone-platform=x11 .",
+    "start:no-sandbox": "electron --ozone-platform=x11 --no-sandbox .",
+    "spike": "electron --ozone-platform=x11 spike/verify.js",
+    "check:render": "electron --ozone-platform=x11 spike/render-check.js",
+    "icons": "python3 scripts/make-icon.py",
+    "test": "node --test test/*.test.js",
+    "fix-sandbox": "sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --linux AppImage deb"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  }
+}

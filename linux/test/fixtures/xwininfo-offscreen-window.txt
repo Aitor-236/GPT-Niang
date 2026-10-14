@@ -1,0 +1,24 @@
+
+xwininfo: Window id: 0xe00017 "ChatGPT"
+
+  Absolute upper-left X:  1550
+  Absolute upper-left Y:  -980
+  Relative upper-left X:  1550
+  Relative upper-left Y:  -980
+  Width: 1415
+  Height: 2842
+  Depth: 32
+  Visual: 0x254
+  Visual Class: TrueColor
+  Border width: 0
+  Class: InputOutput
+  Colormap: 0xe00003 (not installed)
+  Bit Gravity State: NorthWestGravity
+  Window Gravity State: NorthWestGravity
+  Backing Store State: NotUseful
+  Save Under State: no
+  Map State: IsViewable
+  Override Redirect State: yes
+  Corners:  +1550+-980  --405+-980  --405--422  +1550--422
+  -geometry 1415x2842+1550+-980
+

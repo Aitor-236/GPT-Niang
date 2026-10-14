@@ -1,0 +1,4 @@
+WM_CLASS(STRING) = "chatgpt (/home/USER/.config/Codex)", "Chatgpt"
+WM_NAME(UTF8_STRING) = "ChatGPT"
+_NET_WM_STATE(ATOM) = _NET_WM_STATE_FOCUSED
+WM_TRANSIENT_FOR:  not found.

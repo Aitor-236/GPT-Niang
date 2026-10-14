@@ -1,0 +1,52 @@
+appId: io.github.aitor236.gpt-niang-usage
+productName: GPT 娘
+copyright: Copyright © 2026 GPT-Niang contributors (MIT)
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**/*
+  - renderer/**/*
+  - preload.cjs
+  - package.json
+
+# The quota backend and the character assets stay shared with the Windows and
+# macOS builds instead of being copied into this tree.
+extraResources:
+  - from: ../gpt-niang-usage/runtime
+    to: runtime
+    filter:
+      - '**/*'
+      - '!**/*.test.mjs'
+  - from: ../gpt-niang-usage/assets
+    to: assets
+    filter:
+      - gpt-dragon-niang-bust.png
+      - press.wav
+      - release.wav
+      - quotes.json
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
+  maintainer: Aitor <aitor.x@outlook.com>
+  # Electron uses desktopName for WM_CLASS so the window links to this entry.
+  syncDesktopName: true
+  synopsis: 跟随 Codex 窗口显示额度与语录的桌面挂件
+  description: >-
+    白发紫瞳龙娘挂件：读取本机 Codex 的额度窗口（或 API Key 登录下的 provider
+    余额），在角色旁的气泡中显示剩余百分比、重置时间与语录。需要 Node.js 20 或更新版本。
+  desktop:
+    entry:
+      Name: GPT 娘
+      Comment: 跟随 Codex 窗口显示额度与语录
+      StartupWMClass: gpt-niang-usage
+      Categories: Utility;
+
+deb:
+  depends:
+    - nodejs

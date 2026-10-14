@@ -83,6 +83,37 @@ export function resolveCodexExecutable(configuredPath,{env=process.env,platform=
     }
   }
 
+  if(platform==='linux'){
+    // An explicit app root replaces installed-client discovery, mirroring the
+    // macOS build's GPT_NIANG_CODEX_APP behaviour and keeping isolated runs
+    // (tests, portable installs) from picking up a system client.
+    const appRoot=env.GPT_NIANG_CODEX_APP;
+    if(appRoot){
+      for(const relative of ['resources/codex','codex']){
+        const file=path.join(appRoot,relative);
+        if(isFile(file))return file;
+      }
+      return configuredPath;
+    }
+    // PATH wins so an explicitly installed CLI still leads; the desktop
+    // client's bundled CLI and the standalone package follow.
+    const onPath=findOnPath(executable,env,platform,isFile);
+    if(onPath)return onPath;
+    const candidates=['/usr/lib/chatgpt/resources/codex','/usr/lib/codex/codex'];
+    const home=env.CODEX_HOME??(env.HOME?path.join(env.HOME,'.codex'):null);
+    if(home){
+      const packages=path.join(home,'packages','standalone');
+      candidates.push(path.join(packages,'current','bin','codex'));
+      try{
+        for(const entry of fs.readdirSync(packages,{withFileTypes:true})){
+          if(entry.isDirectory()&&entry.name!=='current')candidates.push(path.join(packages,entry.name,'bin','codex'));
+        }
+      }catch{}
+    }
+    if(env.HOME)candidates.push(path.join(env.HOME,'.local','bin','codex'));
+    for(const candidate of candidates)if(isFile(candidate))return candidate;
+  }
+
   const localData=env.LOCALAPPDATA??env.LocalAppData;
   if(platform==='win32' && localData){
     const root=path.join(localData,'OpenAI','Codex','bin');
@@ -93,13 +124,19 @@ export function resolveCodexExecutable(configuredPath,{env=process.env,platform=
     candidates.sort((a,b)=>b.modified-a.modified||a.file.localeCompare(b.file));
     if(candidates.length)return candidates[0].file;
   }
+  const fromPath=findOnPath(executable,env,platform,isFile);
+  if(fromPath)return fromPath;
+  return configuredPath;
+}
+
+function findOnPath(executable,env,platform,isFile) {
   for(const directory of (env.PATH??env.Path??'').split(platform==='win32'?';':':')){
     const trimmed=directory.trim().replace(/^"(.*)"$/,'$1');
     if(!trimmed)continue;
     const file=path.join(trimmed,executable);
     if(isFile(file))return file;
   }
-  return configuredPath;
+  return null;
 }
 
 // Only three read-only protocol methods are sent. There is no thread or model call.

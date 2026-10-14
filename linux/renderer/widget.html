@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src gpt-asset:; media-src gpt-asset:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>GPT 娘</title>
+    <link rel="stylesheet" href="widget.css" />
+  </head>
+  <body>
+    <div id="stage">
+      <div id="root">
+        <!-- Bubble: the WPF cloud outline is used verbatim as an SVG path. -->
+        <div id="bubble" class="hidden" title="点气泡看语录，再点收起">
+          <svg id="bubble-shape" width="350" height="239" viewBox="0 0 350 239" aria-hidden="true">
+            <path
+              d="M 283,85 A 128,79 0 1 0 27,85 A 128,79 0 0 0 114,160 A 20,10 0 0 0 149,164 A 128,79 0 0 0 283,85 Z"
+              fill="#FFFFFF"
+              stroke="#745A98"
+              stroke-width="4"
+              stroke-linejoin="round"
+              stroke-linecap="round"
+            />
+          </svg>
+          <div id="live-dot" class="hidden"></div>
+          <div id="scene">
+            <div id="quota-view">
+              <div id="header-row">
+                <span id="header">正在读取</span>
+                <button id="refresh" type="button" title="立即刷新额度">↻</button>
+              </div>
+              <div id="rows">
+                <div class="row" id="row-0">
+                  <div class="row-head">
+                    <span class="row-label">—</span>
+                    <span class="row-value">—</span>
+                  </div>
+                  <div class="bar"><div class="bar-fill"></div></div>
+                  <div class="row-reset">等待额度数据</div>
+                </div>
+                <div class="row" id="row-1">
+                  <div class="row-head">
+                    <span class="row-label">—</span>
+                    <span class="row-value">—</span>
+                  </div>
+                  <div class="bar"><div class="bar-fill"></div></div>
+                  <div class="row-reset">等待额度数据</div>
+                </div>
+              </div>
+            </div>
+            <div id="quote-view" class="hidden"><span id="quote-text"></span></div>
+          </div>
+        </div>
+        <div id="tail"></div>
+        <div id="tail-near"></div>
+        <img id="girl" src="gpt-asset://gpt-dragon-niang-bust.png" alt="GPT 娘" draggable="false" />
+        <button id="menu-button" type="button" title="挂件设置">☰</button>
+      </div>
+    </div>
+    <script src="widget.js"></script>
+  </body>
+</html>

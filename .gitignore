@@ -26,3 +26,6 @@ Thumbs.db
 **/gui.lock
 **/worker-ownership.lock
 **/worker.log
+
+# Linux build resources (generated from the shared character art)
+linux/build/

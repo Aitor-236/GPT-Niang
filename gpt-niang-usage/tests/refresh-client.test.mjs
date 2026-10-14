@@ -15,8 +15,11 @@ const worker=fileURLToPath(new URL('../runtime/watch.mjs',import.meta.url));
 // Missing-CLI fixtures must not discover the developer's installed Codex.
 function isolatedWorkerEnv(dir){
   const env={...process.env};
-  for(const key of Object.keys(env))if(['localappdata','path'].includes(key.toLowerCase()))delete env[key];
-  return {...env,LOCALAPPDATA:dir,PATH:dir,GPT_NIANG_CODEX_APP:path.join(dir,'absent.app')};
+  for(const key of Object.keys(env))if(['localappdata','path','home','codex_home'].includes(key.toLowerCase()))delete env[key];
+  // HOME/CODEX_HOME are isolated too: the quota worker resolves the CLI and the
+  // provider credentials from them, and a test must not read the real user
+  // configuration or reach a provider balance endpoint.
+  return {...env,LOCALAPPDATA:dir,PATH:dir,HOME:dir,CODEX_HOME:dir,GPT_NIANG_CODEX_APP:path.join(dir,'absent.app')};
 }
 const mockCli=[
   "const fs=require('node:fs'),readline=require('node:readline');",

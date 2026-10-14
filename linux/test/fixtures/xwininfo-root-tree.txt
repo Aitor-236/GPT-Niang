@@ -1,0 +1,36 @@
+
+xwininfo: Window id: 0x379 (the root window) (has no name)
+
+  Root window id: 0x379 (the root window) (has no name)
+  Parent window id: 0x0 (none)
+     21 children:
+     0xe00017 "ChatGPT": ("chatgpt (/home/USER/.config/Codex)" "Chatgpt")  1415x2842+1550+-980  +1550+-980
+     0xe00004 "ChatGPT": ("chatgpt (/home/USER/.config/Codex)" "Chatgpt")  2209x1297+293+113  +293+113
+        1 child:
+        0x1600012 (has no name): ()  2209x1297+0+0  +293+113
+     0x1000003 "ChatGPT": ("ChatGPT" "ChatGPT")  200x200+0+0  +0+0
+        1 child:
+        0x1000004 (has no name): ()  1x1+-1+-1  +-1+-1
+     0xe00011 (has no name): ()  1x1+0+0  +0+0
+     0x1000001 "ChatGPT": ("ChatGPT" "ChatGPT")  10x10+10+10  +10+10
+     0xe00000 "Chromium clipboard": ()  10x10+-100+-100  +-100+-100
+     0x600000 (has no name): ()  1x1+0+0  +0+0
+     0xa00002 "mutter-x11-frames": ("mutter-x11-frames" "mutter-x11-frames")  1x1+0+0  +0+0
+        1 child:
+        0xa00003 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x800003 "ibus-xim": ()  1x1+0+0  +0+0
+        1 child:
+        0x800004 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x800001 "ibus-x11": ("ibus-x11" "")  10x10+10+10  +10+10
+     0x400009 (has no name): ()  1x1+0+0  +0+0
+     0x400008 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x400007 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x400006 (has no name): ()  1x1+-100+-100  +-100+-100
+     0x400005 (has no name): ()  1x1+-100+-100  +-100+-100
+     0x400004 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x400003 (has no name): ()  1x1+-100+-100  +-100+-100
+     0x400002 (has no name): ()  1x1+-100+-100  +-100+-100
+     0x400001 "GNOME Shell": ()  1x1+-100+-100  +-100+-100
+     0x200001 (has no name): ()  10x10+0+0  +0+0
+     0x40000a "mutter guard window": ()  2560x1440+0+0  +0+0
+
