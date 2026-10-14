@@ -33,6 +33,11 @@ extraResources:
     to: .codex-plugin
     filter:
       - plugin.json
+  # The plugin manifest points at .mcp.json, and the same resources directory can
+  # be handed to scripts/register-plugin.sh as the plugin source of the installed
+  # app, so it has to be packaged too.
+  - from: ../gpt-niang-usage/.mcp.json
+    to: .mcp.json
 
 linux:
   target:

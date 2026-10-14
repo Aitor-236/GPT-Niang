@@ -20,6 +20,8 @@
     "check:render": "electron --ozone-platform=x11 spike/render-check.js",
     "icons": "python3 scripts/make-icon.py",
     "test": "node --test test/*.test.js",
+    "register-plugin": "scripts/register-plugin.sh",
+    "unregister-plugin": "scripts/register-plugin.sh --remove",
     "fix-sandbox": "sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --linux AppImage deb"

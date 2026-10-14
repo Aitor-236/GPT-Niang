@@ -6,7 +6,7 @@
     "interface":  {
                       "displayName":  "GPT娘额度挂件",
                       "shortDescription":  "半身龙娘挂件，额度与语录依次切换。",
-                      "longDescription":  "按用户角色参考制作的 Windows 本地挂件。可选 Codex 窗口内或整个桌面模式，支持拖动、缩放和桌面置顶，每分钟读取官方订阅额度，点击角色展开剩余额度与语录气泡。",
+                      "longDescription":  "按用户角色参考制作的桌面挂件（Windows / macOS / Linux）。可选 Codex 窗口内或整个桌面模式，支持拖动、缩放和桌面置顶，每分钟读取官方订阅额度，点击角色展开剩余额度与语录气泡。",
                       "developerName":  "T7moris",
                       "category":  "Productivity",
                       "capabilities":  [

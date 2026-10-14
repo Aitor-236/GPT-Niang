@@ -85,7 +85,7 @@ AppImage 需要 `libfuse.so.2`：Ubuntu 24.04 起默认只装 fuse3，缺库时�
 已实现：跟随 Codex 窗口显示额度/余额（X11 事件推送，连接不可用时自动回落到 xwininfo 轮询）、
 透明区域点击穿透、语录切换、拖动与边缘吸附、60%–250% 缩放、
 桌面模式与置顶、右键菜单、设置窗口、开机自启、双数据源（官方额度与 provider 余额）、
-单实例、宿主最小化/隐藏时自动收起。
+单实例、宿主最小化/隐藏时自动收起、注册为 Codex 插件（`get_codex_usage` MCP 工具）。
 
 跟随位置始终待在 Codex 窗口内：可用区取"Codex 窗口 ∩ 所在显示器"（与 macOS 端
 `Placement.usableArea` 一致），窗口比挂件还小时挂件按较小的那一维等比缩小
@@ -93,8 +93,29 @@ AppImage 需要 `libfuse.so.2`：Ubuntu 24.04 起默认只装 fuse3，缺库时�
 拖动的范围同样是这个可用区：跟随模式下拖到窗口边缘就停住，不会拖出去再弹回来；
 桌面模式仍在整个桌面范围内拖动。
 
-暂缓（接口已留出，尚未实现）：内置自动更新与回滚、Codex 插件市场注册
-（`get_codex_usage` MCP 工具）、聊天速度面板。
+暂缓（接口已留出，尚未实现）：内置自动更新与回滚、聊天速度面板。
+
+## 注册为 Codex 插件
+
+```sh
+npm run register-plugin     # 复制插件到本地市场并让 Codex 安装、启用
+npm run unregister-plugin   # 卸载并删除本地市场目录
+```
+
+脚本做的事和 Windows 端 `Install.ps1` 相同：在
+`~/.local/share/GPTNiangUsage/plugin-marketplace/gpt-niang-local`（数据目录同盘，
+`GPT_NIANG_DATA_DIR` 可覆盖）下生成一个单插件市场
+（`.agents/plugins/marketplace.json` + `plugins/gpt-niang-usage/`），然后调用
+`codex plugin marketplace add` 与 `codex plugin add gpt-niang-usage@gpt-niang-local`，
+最后用 `codex plugin list --json` 校验"恰好一个已安装且启用、版本匹配"。
+
+插件副本里会写好 `.mcp.json`（node 与 `runtime/mcp.mjs` 的绝对路径）与
+`installation.json`（数据目录、node／codex 路径、额度来源），因此工具不依赖工作目录，
+也会跟随桌面端设置的额度来源。**重新打开 Codex 或新建会话**后，插件与工具
+`get_codex_usage` 才会出现；工具只读，不创建聊天、不调用模型。
+
+`--source <目录>` 可以指定插件源（安装包场景传它的 `resources` 目录），`--root <目录>`
+可以换本地市场位置；`CODEX_BIN` / `GPT_NIANG_NODE` 用于指定 `codex` 与 `node` 的路径。
 
 ## 已知限制
 
