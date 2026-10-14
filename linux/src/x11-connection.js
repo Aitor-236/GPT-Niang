@@ -254,6 +254,19 @@ export function createX11Connection({
     return {x: translate.destX, y: translate.destY, width: geometry.width, height: geometry.height};
   }
 
+  // The pointer's position in root (physical) pixels, straight from the server.
+  //
+  // Electron's screen.getCursorScreenPoint() is not usable for this: Chromium
+  // only refreshes its idea of the pointer from input events delivered to *its*
+  // windows, and the widget's window deliberately has an empty input shape while
+  // it is passing clicks through. The value is then frozen at whatever it was
+  // when the app started, so asking it "is the cursor over the character?" can
+  // never say yes - a chicken and egg problem the input shape can never leave.
+  async function cursor() {
+    const pointer = await call('QueryPointer', root);
+    return {x: pointer.rootX, y: pointer.rootY};
+  }
+
   // Class and map state for one window, cached for the window's lifetime.
   async function windowInfo(id) {
     let entry = windows.get(id);
@@ -423,6 +436,7 @@ export function createX11Connection({
     listWindows,
     queryWindow,
     geometryOf,
+    cursor,
     readWorkArea: async () => {
       workArea = (await readWorkAreaProperty()) ?? workArea;
       return workArea;
@@ -446,6 +460,7 @@ export function createEventSource(connection) {
     setTransientFor: (id, hostId) => connection.setTransientFor(id, hostId),
     watchWindow: (id, handler) => connection.watchWindow(id, handler),
     subscribe: handler => connection.subscribe(handler),
+    cursor: () => connection.cursor(),
     ownGeometry: id => connection.geometryOf(id)
   };
 }

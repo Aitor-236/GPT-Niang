@@ -92,6 +92,10 @@ function fakeX() {
     GetGeometry(drawable, cb) {
       requests.push({method: 'GetGeometry', args: [drawable]});
       cb(null, {depth: 24, windowid: drawable, xPos: 0, yPos: 0, width: drawable === HOST ? 2209 : 440, height: drawable === HOST ? 1369 : 440, borderWidth: 0});
+    },
+    QueryPointer(wid, cb) {
+      requests.push({method: 'QueryPointer', args: [wid]});
+      cb(null, {sameScreen: true, root: ROOT, child: 0, rootX: 1539, rootY: 1028, mask: 0});
     }
   };
   const module = {
@@ -219,6 +223,18 @@ test('readWindowState names the atoms in _NET_WM_STATE', async () => {
   assert.deepEqual(await connection.readWindowState(HOST), ['_NET_WM_STATE_ABOVE', 'UNKNOWN']);
 });
 
+// The input-shape decision reads the pointer from the server: Chromium's own
+// screen.getCursorScreenPoint() is frozen while our window ignores input, so it
+// cannot answer "is the pointer over the character?".
+test('cursor reads the pointer straight from the server', async () => {
+  const fake = fakeX();
+  const connection = connect(fake);
+  await connection.connect();
+  assert.deepEqual(await connection.cursor(), {x: 1539, y: 1028});
+  const query = fake.client.requests.find(request => request.method === 'QueryPointer');
+  assert.deepEqual(query.args, [ROOT], 'the root window is queried');
+});
+
 test('setTransientFor writes a 32-bit WINDOW property on our own window', async () => {
   const fake = fakeX();
   const connection = connect(fake);
@@ -242,5 +258,5 @@ test('a disconnected connection reports itself and rejects queries', async () =>
 
 test('createEventSource exposes the follower tool surface', () => {
   const keys = Object.keys(createEventSource({}));
-  assert.deepEqual(keys, ['listWindows', 'queryWindow', 'readWorkArea', 'readWindowState', 'setTransientFor', 'watchWindow', 'subscribe', 'ownGeometry']);
+  assert.deepEqual(keys, ['listWindows', 'queryWindow', 'readWorkArea', 'readWindowState', 'setTransientFor', 'watchWindow', 'subscribe', 'cursor', 'ownGeometry']);
 });

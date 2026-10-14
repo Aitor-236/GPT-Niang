@@ -146,7 +146,7 @@ const state = {
   drag: null,
   // Input pass-through. `ignoring` mirrors what was last told to the window;
   // `misses` is the debounce that keeps the toggle from flapping.
-  pointer: {ignoring: true, misses: 0, token: 0, pending: 0, pendingAt: 0, timer: null, inside: null, lastTest: null, lastTestAt: 0},
+  pointer: {ignoring: true, misses: 0, token: 0, pending: 0, pendingAt: 0, timer: null, inside: null, lastTest: null, lastTestAt: 0, inFlight: false},
   forceInteractive: false,
   sizeGuard: {lastAt: 0, corrections: 0},
   sprite: null,
@@ -325,26 +325,46 @@ function setIgnoreMouse(ignore) {
   if (process.env.GPT_NIANG_DEBUG) log('ignore-mouse', {ignore});
 }
 
-// Where the pointer is, in DIP. GPT_NIANG_POINTER_TEST substitutes a fixed
-// point, which is how the input-shape behaviour can be checked without chasing
-// a real pointer around the screen (and without moving the user's):
+// Where the pointer is, in root (physical) pixels.
+//
+// The X server is asked directly. Electron's screen.getCursorScreenPoint() is
+// only a fallback, because Chromium refreshes it from input events delivered to
+// its own windows: while the widget is passing clicks through its window has an
+// empty input shape, receives nothing, and the value stays frozen where it was
+// when the app started. Asking it "is the pointer over the character?" could
+// then never answer yes, and the input shape would stay shut forever.
+//
+// GPT_NIANG_POINTER_TEST substitutes a stand-in point instead, which is how the
+// input-shape behaviour is checked without moving the user's pointer:
 //
 //   x,y            screen coordinates in DIP
-//   local:x,y      x,y inside the widget window, so the stand-in point follows
-//                  the window instead of pinning the widget to pass-through
-//                  once it is repositioned.
+//   local:x,y      x,y inside the widget window (DIP), so the stand-in point
+//                  follows the window instead of pinning the widget to
+//                  pass-through once it is repositioned.
 //
 // Diagnostics only: it is not in DEFAULT_SETTINGS and the settings window's
 // click-through switch is the way back if the widget ever stops responding.
-function cursorPoint(origin) {
+async function cursorPixels(rect) {
   const override = process.env.GPT_NIANG_POINTER_TEST;
   if (override) {
     const text = String(override);
     const local = text.startsWith('local:');
-    const [x, y] = text.replace(/^local:/, '').split(',').map(Number);
-    if (Number.isFinite(x) && Number.isFinite(y)) return local ? {x: origin.x + x, y: origin.y + y} : {x, y};
+    const [dipX, dipY] = text.replace(/^local:/, '').split(',').map(Number);
+    if (Number.isFinite(dipX) && Number.isFinite(dipY)) {
+      const x = dipsToPixels(dipX, state.scaleFactor);
+      const y = dipsToPixels(dipY, state.scaleFactor);
+      return local ? {x: rect.x + x, y: rect.y + y} : {x, y};
+    }
   }
-  return screen.getCursorScreenPoint();
+  if (state.connection?.isConnected()) {
+    try {
+      return await state.connection.cursor();
+    } catch (error) {
+      log('cursor-query-failed', {message: error?.message ?? String(error)});
+    }
+  }
+  const fallback = screen.getCursorScreenPoint();
+  return {x: dipsToPixels(fallback.x, state.scaleFactor), y: dipsToPixels(fallback.y, state.scaleFactor)};
 }
 
 // The Windows build answers WM_NCHITTEST with HTTRANSPARENT when the point
@@ -354,7 +374,19 @@ function cursorPoint(origin) {
 // back to the renderer is macOS/Windows only. So the cursor is sampled here and
 // the shape is switched, and only while the pointer is inside our rectangle is
 // the renderer asked to hit-test.
-function pollPointer() {
+async function pollPointer() {
+  if (state.pointer.inFlight) return;
+  state.pointer.inFlight = true;
+  try {
+    await samplePointer();
+  } catch (error) {
+    log('pointer-poll-failed', {message: error?.message ?? String(error)});
+  } finally {
+    state.pointer.inFlight = false;
+  }
+}
+
+async function samplePointer() {
   if (!state.widget || state.widget.isDestroyed() || !state.widgetXid) return;
   if (!state.visible) {
     setIgnoreMouse(true);
@@ -365,13 +397,22 @@ function pollPointer() {
     setIgnoreMouse(false);
     return;
   }
-  const [x, y] = state.widget.getPosition();
-  const [width, height] = state.widget.getSize();
-  const cursor = cursorPoint({x, y});
-  const inside = cursor.x >= x && cursor.x < x + width && cursor.y >= y && cursor.y < y + height;
+  // Both sides of the comparison are the X server's own pixels: the window
+  // position and size come back as DIP from Electron, so they are converted the
+  // same way the placement maths converts them.
+  const [dipX, dipY] = state.widget.getPosition();
+  const [dipWidth, dipHeight] = state.widget.getSize();
+  const rect = {
+    x: dipsToPixels(dipX, state.scaleFactor),
+    y: dipsToPixels(dipY, state.scaleFactor),
+    width: dipsToPixels(dipWidth, state.scaleFactor),
+    height: dipsToPixels(dipHeight, state.scaleFactor)
+  };
+  const cursor = await cursorPixels(rect);
+  const inside = cursor.x >= rect.x && cursor.x < rect.x + rect.width && cursor.y >= rect.y && cursor.y < rect.y + rect.height;
   if (inside !== state.pointer.inside) {
     state.pointer.inside = inside;
-    if (process.env.GPT_NIANG_DEBUG) log('pointer-inside', {inside, cursor, window: {x, y, width, height}});
+    if (process.env.GPT_NIANG_DEBUG) log('pointer-inside', {inside, cursorPixels: cursor, windowPixels: rect});
   }
   if (!inside) {
     state.pointer.misses += 1;
@@ -380,7 +421,12 @@ function pollPointer() {
   }
   state.pointer.misses = 0;
   if (!state.pointer.ignoring) return;
-  const point = {x: cursor.x - x, y: cursor.y - y};
+  // Window-local CSS pixels, which is what document.elementFromPoint takes; the
+  // stage's own scale is applied by the hit test.
+  const point = {
+    x: (cursor.x - rect.x) / state.scaleFactor,
+    y: (cursor.y - rect.y) / state.scaleFactor
+  };
   const stamp = Date.now();
   const moved = !state.pointer.lastTest
     || Math.abs(state.pointer.lastTest.x - point.x) > 1
@@ -393,9 +439,6 @@ function pollPointer() {
   const token = ++state.pointer.token;
   state.pointer.pending = token;
   state.pointer.pendingAt = stamp;
-  // Window-local DIP equals the renderer's CSS pixels, so the point needs no
-  // further conversion; the CSS transform on the stage is applied by the hit
-  // test itself.
   if (process.env.GPT_NIANG_DEBUG) log('hit-request', {token, x: point.x, y: point.y});
   webContents.send('hit-test', {token, x: point.x, y: point.y});
 }
@@ -434,7 +477,7 @@ function notifyHitChanged(payload) {
 function startPointerTracking() {
   if (state.pointer.timer) return;
   if (process.env.GPT_NIANG_DEBUG) log('pointer-tracking', {intervalMs: POINTER_POLL_MS});
-  state.pointer.timer = setInterval(pollPointer, POINTER_POLL_MS);
+  state.pointer.timer = setInterval(() => void pollPointer(), POINTER_POLL_MS);
 }
 
 // The character's alpha channel, decoded once and handed to the renderer: its
@@ -630,7 +673,7 @@ async function updateSettings(patch, {silent = false} = {}) {
   }
   if (patch.clickThrough !== undefined) {
     state.pointer.misses = 0;
-    pollPointer();
+    void pollPointer();
   }
   if (!silent) broadcast();
   return state.settings;
@@ -889,7 +932,7 @@ function handlePointer(payload) {
     persistDragResult();
     state.drag = null;
     state.pointer.misses = 0;
-    pollPointer();
+    void pollPointer();
     if (!wasDesktop) state.follower?.resume();
   }
 }
