@@ -46,6 +46,17 @@
                   <div class="row-reset">等待额度数据</div>
                 </div>
               </div>
+              <!-- DeepSeek has a balance rather than quota windows, and the
+                   reference widget stacks it: title, amount, one detail line
+                   and the pricing window. -->
+              <div id="balance-view" class="hidden">
+                <div id="balance-amount">—</div>
+                <div id="balance-detail">—</div>
+                <div id="balance-window">
+                  <span id="balance-badge">谷</span>
+                  <span id="balance-countdown">--:--:--</span>
+                </div>
+              </div>
             </div>
             <div id="quote-view" class="hidden"><span id="quote-text"></span></div>
           </div>

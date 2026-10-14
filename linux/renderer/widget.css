@@ -226,6 +226,81 @@ body {
   justify-content: center;
 }
 
+/* DeepSeek balance block: the reference widget stacks title / amount / detail /
+   pricing window instead of the two quota rows. */
+#balance-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 96px;
+  gap: 2px;
+}
+
+#balance-amount {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 34px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+#balance-detail {
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+#balance-window {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+  color: var(--ink);
+}
+
+#balance-badge {
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #2fa24c;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+#balance-badge.peak {
+  background: #e0433f;
+}
+
+#balance-countdown {
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(47, 162, 76, 0.5);
+}
+
+#balance-countdown.peak {
+  text-decoration-color: rgba(224, 67, 63, 0.5);
+}
+
+/* With a balance on screen the header is the bubble's headline, not a caption. */
+#stage.source-deepseek #header-row {
+  height: 20px;
+}
+
+#stage.source-deepseek #header {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+  color: var(--ink);
+}
+
 #quote-text {
   text-align: center;
   font-size: 20px;

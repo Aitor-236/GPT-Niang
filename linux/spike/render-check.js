@@ -130,6 +130,9 @@ const READ_LAYOUT = [
   "    };",
   "  });",
   "  const overlapping = rows.some((row, index) => index > 0 && row.row.y < rows[index - 1].row.y + rows[index - 1].row.h);",
+  "  const balance = document.getElementById('balance-view');",
+  "  const balanceVisible = !balance.classList.contains('hidden');",
+  "  const box2 = id => { const el = document.getElementById(id); const r = el.getBoundingClientRect(); return {text: el.textContent, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), insideScene: r.left >= sceneRect.left - 0.5 && r.right <= sceneRect.right + 0.5 && r.bottom <= sceneRect.bottom + 0.5}; };",
   "  return {",
   "    scene: box(scene),",
   "    bubble: box(document.getElementById('bubble')),",
@@ -137,6 +140,8 @@ const READ_LAYOUT = [
   "    headerText: document.getElementById('header').textContent,",
   "    rows,",
   "    overlapping,",
+    "    balanceVisible,",
+    "    balance: balanceVisible ? {amount: box2('balance-amount'), detail: box2('balance-detail'), badge: box2('balance-badge'), countdown: box2('balance-countdown'), detailEllipsised: (() => { const el = document.getElementById('balance-detail'); return el.scrollWidth > el.clientWidth + 1; })()} : null,",
   "    documentWidth: document.documentElement.scrollWidth,",
   "    clientWidth: document.documentElement.clientWidth,",
   "    font: getComputedStyle(document.getElementById('header')).fontFamily",
@@ -215,8 +220,10 @@ app.whenReady().then(async () => {
       const layout = await window.webContents.executeJavaScript(READ_LAYOUT);
       if (process.env.GPT_NIANG_CAPTURE) {
         const image = await window.webContents.capturePage();
-        fs.writeFileSync(process.env.GPT_NIANG_CAPTURE, image.toPNG());
-        console.log('CAPTURED ' + process.env.GPT_NIANG_CAPTURE + ' ' + JSON.stringify(image.getSize()));
+        // One file per case, so the balance layout can be looked at directly.
+        const file = process.env.GPT_NIANG_CAPTURE.replace(/\.png$/, '') + '-' + testCase.name + '.png';
+        fs.writeFileSync(file, image.toPNG());
+        console.log('CAPTURED ' + file + ' ' + JSON.stringify(image.getSize()));
       }
       await window.webContents.executeJavaScript('document.getElementById("girl").click()');
       await wait(320);
