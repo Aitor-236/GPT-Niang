@@ -137,6 +137,9 @@ const state = {
   // "use the configured scale": desktop mode never shrinks the widget.
   fitDip: null,
   appliedDip: null,
+  // True once the window manager kept the widget's ownership hint, i.e. the
+  // widget shares the chat window's z-order instead of floating above everything.
+  attached: false,
   visible: false,
   snapshot: null,
   snapshotKey: null,
@@ -325,6 +328,51 @@ function setIgnoreMouse(ignore) {
   if (process.env.GPT_NIANG_DEBUG) log('ignore-mouse', {ignore});
 }
 
+// Grouping the widget with the chat window is the whole point of the X11
+// equivalent of a Win32 *owner* window: mutter keeps a transient above its
+// parent, raises it with the parent, and - unlike _NET_WM_STATE_ABOVE - lets
+// other windows cover the pair together, which is the behaviour the Windows
+// build has and this port was missing ("跟随时挂件比主窗口还高，切到别的窗口
+// 也不被盖住").
+//
+// The hint has to be set before the window is mapped, which is why it happens
+// in showWidget rather than after the first follow tick. It is read back: if the
+// window manager dropped it, always-on-top is the fallback, because a widget
+// hidden behind its own chat window is worse than one that is too high.
+async function attachToHost(hostId) {
+  if (!state.widget || state.widget.isDestroyed() || !state.widgetXid || !hostId) return;
+  const connection = state.connection;
+  if (!connection?.isConnected()) {
+    // Polling fallback: best effort, and keep the window visible.
+    void setTransientFor(state.widgetXid, hostId).catch(() => {});
+    state.widget.setAlwaysOnTop(true);
+    return;
+  }
+  await connection.setTransientFor(state.widgetXid, hostId);
+  const owner = await connection.transientFor(state.widgetXid);
+  const attached = owner === hostId;
+  state.widget.setAlwaysOnTop(!attached);
+  const previous = state.attached;
+  state.attached = attached;
+  if (previous !== attached || process.env.GPT_NIANG_DEBUG) {
+    log('widget-attach', {host: hostId, owner, attached, above: !attached});
+  }
+}
+
+// Desktop mode is an ordinary window on the desktop: no owner, and the user's
+// own always-on-top preference.
+async function detachFromHost() {
+  if (!state.widget || state.widget.isDestroyed() || !state.widgetXid) return;
+  state.attached = false;
+  if (state.connection?.isConnected()) {
+    try {
+      // 32-bit WINDOW property with no value: WM_TRANSIENT_FOR = None.
+      await state.connection.setTransientFor(state.widgetXid, 0);
+    } catch {}
+  }
+  state.widget.setAlwaysOnTop(Boolean(state.settings.desktopTopmost));
+}
+
 // Where the pointer is, in root (physical) pixels.
 //
 // The X server is asked directly. Electron's screen.getCursorScreenPoint() is
@@ -457,23 +505,6 @@ function notifyHitResult(payload) {
   if (state.pointer.misses >= 2) setIgnoreMouse(true);
 }
 
-// Sent by the renderer while the window is interactive: the pointer moved onto
-// a transparent part, so the window can go back to passing clicks through
-// without waiting for the next sample.
-function notifyHitChanged(payload) {
-  if (state.forceInteractive) return;
-  // With GPT_NIANG_POINTER_TEST the sampler describes a point the renderer
-  // knows nothing about, so its pointer reports would fight the sampler.
-  if (process.env.GPT_NIANG_POINTER_TEST) return;
-  if (payload?.hit) {
-    state.pointer.misses = 0;
-    setIgnoreMouse(false);
-    return;
-  }
-  state.pointer.misses = 2;
-  setIgnoreMouse(true);
-}
-
 function startPointerTracking() {
   if (state.pointer.timer) return;
   if (process.env.GPT_NIANG_DEBUG) log('pointer-tracking', {intervalMs: POINTER_POLL_MS});
@@ -517,18 +548,17 @@ function spriteMask() {
 
 async function showWidget() {
   if (!state.widget || state.widget.isDestroyed()) return;
-  state.widget.showInactive();
-  state.visible = true;
   if (!state.widgetXid) {
     state.widgetXid = windowHandleToXid(state.widget.getNativeWindowHandle());
     log('widget-xid', {id: state.widgetXid});
     watchOwnWindow();
-    // The first discovery runs before the window has an X id, so the
-    // transient-for hint is set here instead - it is what keeps the widget
-    // grouped with the chat window in the window manager's eyes.
-    const host = state.follower?.host;
-    if (host && state.source?.setTransientFor) void state.source.setTransientFor(state.widgetXid, host.id).catch(() => {});
   }
+  // Before the first map: the window manager only honours an ownership hint it
+  // sees while the window is still unmapped.
+  const host = state.follower?.host;
+  if (host && state.settings.mode !== 'desktop') await attachToHost(host.id);
+  state.widget.showInactive();
+  state.visible = true;
   startPointerTracking();
   await verifyX11();
 }
@@ -630,13 +660,16 @@ function applyMode() {
     // user chose: only follow mode has to fit inside the chat window.
     state.fitDip = null;
     applyWidgetSize();
-    state.widget.setAlwaysOnTop(Boolean(state.settings.desktopTopmost));
+    void detachFromHost();
     const position = state.settings.desktopPosition;
     if (position) state.widget.setPosition(position.x, position.y);
     else parkOnPrimary();
     void showWidget();
   } else {
-    state.widget.setAlwaysOnTop(true);
+    // The widget belongs to the chat window: ownership decides the z-order, not
+    // always-on-top (see attachToHost).
+    const host = state.follower.host;
+    if (host) void attachToHost(host.id);
     startFollowing();
   }
 }
@@ -818,7 +851,9 @@ async function createWidgetWindow() {
     }
   });
   applyWidgetSize();
-  state.widget.setAlwaysOnTop(true);
+  // Follow mode decides this from the ownership hint (attachToHost); desktop
+  // mode uses the user's preference.
+  state.widget.setAlwaysOnTop(state.settings.mode === 'desktop' && Boolean(state.settings.desktopTopmost));
   // Everything starts transparent to the pointer; the cursor poll opens the
   // input shape again over the character, the bubble and the buttons.
   state.pointer.ignoring = true;
@@ -870,23 +905,28 @@ function registerIpc() {
   ipcMain.on('widget:pointer', (_event, payload) => handlePointer(payload));
   ipcMain.on('widget:resize', (_event, scale) => void updateSettings({scale: clampScale(scale)}));
   ipcMain.on('hit-result', (_event, payload) => notifyHitResult(payload));
-  ipcMain.on('hit-changed', (_event, payload) => notifyHitChanged(payload));
 }
 
-// Positions are clamped to the monitors on every path that moves the window,
-// drags included. A window that is partly outside the screen is exactly what
-// makes mutter grow it, so never letting that happen removes the growth trigger
-// as well as keeping the widget where the user can reach it.
+// Positions are clamped on every path that moves the window, drags included.
+//
+// In follow mode the range is the chat window itself (the area the follow loop
+// last placed the widget in), which is what makes dragging feel like moving a
+// thing inside the Codex window rather than dragging a window around and having
+// it snap back. Desktop mode has no such owner, so it is bounded by the monitors
+// instead - which also removes the off-screen move that used to make mutter grow
+// the window out of control.
 function clampPosition(x, y) {
   if (!state.widget || state.widget.isDestroyed()) return {x, y};
   const [width, height] = state.widget.getSize();
-  const rect = clampToMonitors({
+  const rect = {
     x: dipsToPixels(x, state.scaleFactor),
     y: dipsToPixels(y, state.scaleFactor),
     width: dipsToPixels(width, state.scaleFactor),
     height: dipsToPixels(height, state.scaleFactor)
-  }, state.monitors);
-  return {x: pixelsToDips(rect.x, state.scaleFactor), y: pixelsToDips(rect.y, state.scaleFactor)};
+  };
+  const area = state.settings.mode === 'desktop' ? null : state.follower?.usable;
+  const clamped = area ? clampToMonitors(rect, [area]) : clampToMonitors(rect, state.monitors);
+  return {x: pixelsToDips(clamped.x, state.scaleFactor), y: pixelsToDips(clamped.y, state.scaleFactor)};
 }
 
 function applyDragMove() {
@@ -904,6 +944,7 @@ function applyDragMove() {
 function handlePointer(payload) {
   if (!payload || !state.widget || state.widget.isDestroyed()) return;
   const {type, x, y} = payload;
+  if (process.env.GPT_NIANG_DEBUG) log('pointer-message', {type, what: payload.what, x, y, dragging: Boolean(state.drag), force: state.forceInteractive});
   if (type === 'down') {
     const [windowX, windowY] = state.widget.getPosition();
     state.drag = {pointer: {x, y}, window: {x: windowX, y: windowY}, latest: null, frame: null};
@@ -1029,6 +1070,10 @@ async function start() {
     discoveryIntervalMs: state.settings.discoveryIntervalMs,
     source: state.source,
     tools: followTools(state.connection),
+    // The widget shares the chat window's z-order through the ownership hint
+    // (attachToHost), the way the Windows build does with an owner window: it
+    // stays above its own chat window but is covered together with it.
+    above: false,
     // Chromium rounds the window's pixel size up to the device grid; keep the
     // fitted window a couple of pixels clear of the chat window's edge.
     sizeAllowance: Math.max(2, dipsToPixels(2, state.scaleFactor)),

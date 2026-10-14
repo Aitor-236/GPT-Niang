@@ -16,7 +16,6 @@ const hitTest = window.NiangHitTest;
 // The sprite's alpha channel comes from the main process; until it arrives the
 // character counts as a solid rectangle, which errs towards being clickable.
 const sprite = {image: {width: 0, height: 0}, mask: null};
-let lastHitReport = null;
 
 const DESIGN_WINDOW = 350;
 const DESIGN_STAGE = 378;
@@ -70,25 +69,14 @@ function hitAt(point) {
   });
 }
 
+// The main process drives this: it samples the pointer from the X server and
+// asks about one window-local point at a time. The renderer deliberately does
+// *not* report what it thinks the pointer is doing - the pointer events Chromium
+// hands the page carry its own, stale idea of where the pointer is while the
+// input shape is being toggled, and reporting that closed the shape again
+// immediately after it opened.
 window.niang.onHitTest?.(payload => {
   window.niang.hitResult({token: payload.token, hit: hitAt({x: payload.x, y: payload.y})});
-});
-
-// While the window is receiving the pointer it can report leaving an
-// interactive area itself, instead of waiting for the next sample.
-document.addEventListener('pointermove', event => {
-  // Chromium can report the last known position again while the input shape is
-  // changing; a point outside the viewport says nothing about this window.
-  if (event.clientX < 0 || event.clientY < 0 || event.clientX > window.innerWidth || event.clientY > window.innerHeight) return;
-  const hit = hitAt({x: event.clientX, y: event.clientY});
-  if (hit === lastHitReport) return;
-  lastHitReport = hit;
-  window.niang.hitChanged?.({hit});
-});
-document.addEventListener('pointerleave', () => {
-  if (lastHitReport === false) return;
-  lastHitReport = false;
-  window.niang.hitChanged?.({hit: false});
 });
 
 const rows = [

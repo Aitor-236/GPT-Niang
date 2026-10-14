@@ -350,6 +350,19 @@ export function createX11Connection({
     }
   }
 
+  // Read back WM_TRANSIENT_FOR: the hint is only useful if the window manager
+  // kept it, and the widget's z-order policy depends on that answer.
+  async function transientFor(idValue) {
+    try {
+      const result = await getProperty(toXid(idValue), ATOM_NAMES.wmTransientFor);
+      if (!result || result.data.length < 4) return null;
+      const owner = result.data.readUInt32LE(0) >>> 0;
+      return owner === 0 ? null : fromXid(owner);
+    } catch {
+      return null;
+    }
+  }
+
   async function applyMask(id) {
     const entry = watchers.get(id);
     try {
@@ -443,6 +456,7 @@ export function createX11Connection({
     },
     readWindowState,
     setTransientFor,
+    transientFor,
     watchWindow,
     subscribe,
     close

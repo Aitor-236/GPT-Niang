@@ -17,7 +17,6 @@ contextBridge.exposeInMainWorld('niang', {
   spriteMask: async () => null,
   onHitTest: () => {},
   hitResult: () => {},
-  hitChanged: () => {},
   openSettings: async () => true,
   settings: {get: async () => state.settings, set: async () => state.settings},
   quotes: {

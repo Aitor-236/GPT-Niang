@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld('niang', {
   // the pointer has left that area again.
   onHitTest: callback => ipcRenderer.on('hit-test', (_event, payload) => callback(payload)),
   hitResult: payload => ipcRenderer.send('hit-result', payload),
-  hitChanged: payload => ipcRenderer.send('hit-changed', payload),
   spriteMask: () => ipcRenderer.invoke('sprite:mask'),
   openSettings: () => ipcRenderer.invoke('settings:open'),
   settings: {
