@@ -110,3 +110,110 @@ test('follower tracks host movement', async () => {
   follower.stop();
   assert.equal(port.moves.at(-1).x, before + 100 + 12);
 });
+
+// Event mode: the X server pushes ConfigureNotify for the followed window, so
+// the widget reacts to a move instead of waiting for the next sample.
+function eventHarness() {
+  const {port, tools, state} = harness();
+  const listeners = new Set();
+  const watchers = new Map();
+  const counts = {list: 0, query: 0};
+  const source = {
+    listWindows: async () => {
+      counts.list += 1;
+      return parseWindowTree(fixture('xwininfo-root-tree.txt'));
+    },
+    queryWindow: async id => {
+      counts.query += 1;
+      return tools.queryWindow(id);
+    },
+    readWorkArea: async () => ({x: 0, y: 0, width: 2560, height: 1440}),
+    readWindowState: async () => ['_NET_WM_STATE_ABOVE'],
+    setTransientFor: async () => true,
+    subscribe: handler => {
+      listeners.add(handler);
+      return () => listeners.delete(handler);
+    },
+    watchWindow: (id, handler) => {
+      watchers.set(id, handler);
+      return () => watchers.delete(id);
+    }
+  };
+  return {
+    port,
+    state,
+    counts,
+    source,
+    // Monitor layout keeps coming from xrandr even in event mode; the follower
+    // reads it through the tool set, so the tests inject it here.
+    tools: {listMonitors: async () => parseMonitors(fixture('xrandr.txt'))},
+    emit: change => {
+      for (const handler of listeners) handler(change);
+    },
+    configure: (id, geometry) => watchers.get(id)?.({kind: 'configure', id, ...geometry}),
+    watching: id => watchers.has(id)
+  };
+}
+
+test('event mode watches the host window and reacts to its ConfigureNotify', async () => {
+  const {port, source, tools, state, configure, watching} = eventHarness();
+  const follower = createHostFollower(port, {source, tools, discoveryIntervalMs: 40});
+  follower.start();
+  await wait(120);
+  assert.equal(follower.host.id, '0xe00004');
+  assert.equal(watching('0xe00004'), true, 'the host window is watched for structure changes');
+  const before = port.moves.at(-1);
+
+  // What a real move looks like: the window jumps, then reports its geometry.
+  state.hosts.push({x: HOST_RECT.x + 300, y: HOST_RECT.y, width: HOST_RECT.width, height: HOST_RECT.height});
+  configure('0xe00004', {x: 300, y: 300, width: 2209, height: 1369});
+  await wait(60);
+  follower.stop();
+  assert.ok(port.moves.length > 0);
+  assert.notDeepEqual(port.moves.at(-1), before, 'the widget moved on the event, not on the next sample');
+  assert.equal(port.moves.at(-1).x, HOST_RECT.x + 300 + 12);
+});
+
+test('event mode walks the window tree when a window appears or is destroyed', async () => {
+  const {port, source, tools, emit, counts} = eventHarness();
+  const follower = createHostFollower(port, {source, tools, discoveryIntervalMs: 40});
+  follower.start();
+  await wait(120);
+  follower.stop();
+  const before = counts.list;
+
+  follower.start();
+  await wait(40);
+  emit({kind: 'windows', id: '0xe00017'});
+  await wait(60);
+  follower.stop();
+  assert.ok(counts.list > before, 'a window appearing forces a discovery right away');
+});
+
+test('a suspended follower ignores events until it is resumed', async () => {
+  const {port, source, tools, state, configure} = eventHarness();
+  const follower = createHostFollower(port, {source, tools, discoveryIntervalMs: 40});
+  follower.start();
+  await wait(120);
+  follower.suspend();
+  const moves = port.moves.length;
+  state.hosts.push({x: HOST_RECT.x + 500, y: HOST_RECT.y, width: HOST_RECT.width, height: HOST_RECT.height});
+  configure('0xe00004', {x: 500, y: 500, width: 2209, height: 1369});
+  await wait(80);
+  assert.equal(port.moves.length, moves, 'a drag owns the position while it is in progress');
+
+  follower.resume();
+  await wait(80);
+  follower.stop();
+  assert.equal(port.moves.at(-1).x, HOST_RECT.x + 500 + 12);
+});
+
+test('stopping the follower releases the window watch', async () => {
+  const {port, source, tools, watching} = eventHarness();
+  const follower = createHostFollower(port, {source, tools, discoveryIntervalMs: 40});
+  follower.start();
+  await wait(120);
+  assert.equal(watching('0xe00004'), true);
+  follower.stop();
+  assert.equal(watching('0xe00004'), false);
+});

@@ -10,7 +10,9 @@
 - 已安装并登录的 Codex 桌面端。
 - **X11/XWayland 会话**。跟随功能依赖读取其他窗口的几何信息并给自己的窗口定位，
   Wayland 原生客户端两者都做不到，因此应用必须以 `--ozone-platform=x11` 启动；
-  若无法取得 X11 后端，应用会自动退回桌面模式并给出提示。
+  `npm start`、deb 桌面入口与 AppImage 入口都已经带上这个参数；如果在 Wayland 会话里
+  发现启动时没带上它，应用会自己带参数重启一次（只重启一次，不会循环），
+  仍拿不到 X11 后端才退回桌面模式并给出提示。
 
 ## 运行
 
@@ -20,12 +22,13 @@ npm run fix-sandbox  # 首次需要：给 chrome-sandbox 加 setuid（要 sudo�
 npm start            # 启动挂件
 ```
 
-`npm start` 已经带上 `--ozone-platform=x11`。手动启动时不要漏掉这个参数。
+`npm start` 已经带上 `--ozone-platform=x11`。手动启动时不要漏掉这个参数；
+万一漏了，应用会在 Wayland 会话里自己重启一次补上。
 
 ## 自检
 
 ```sh
-npm run spike        # 技术验证：定位、置顶层级、轮询开销、X11 会话（会短暂显示一个测试窗口）
+npm run spike        # 技术验证：定位、置顶层级、轮询开销、X11 会话、事件订阅与点击穿透（会短暂显示一个测试窗口）
 npm run check:render # 渲染自检：用固定的额度/余额/异常快照渲染气泡并打印结果（无界面）
 npm test             # 本目录的几何与 X11 解析测试
 cd ../gpt-niang-usage && node --test tests/*.test.mjs   # 共享后端测试
@@ -73,11 +76,13 @@ AppImage 需要 `libfuse.so.2`：Ubuntu 24.04 起默认只装 fuse3，缺库时�
 | `GPT_NIANG_CODEX_APP` | 指定 Codex 安装根目录，替代自动探测（与 macOS 端同名开关） |
 | `GPT_NIANG_RUNTIME_DIR` / `GPT_NIANG_ASSETS_DIR` | 覆盖共享后端与素材位置 |
 | `GPT_NIANG_DEBUG=1` | 把运行日志打到 stderr |
+| `GPT_NIANG_POINTER_TEST=x,y` | 用固定的 DIP 坐标代替真实指针，便于验证点击穿透（配合 `GPT_NIANG_DEBUG=1` 看命中日志） |
 | `GPT_NIANG_OPEN_SETTINGS=1` | 启动时打开设置窗口 |
 
 ## 已实现与暂缓
 
-已实现：跟随 Codex 窗口显示额度/余额、语录切换、拖动与边缘吸附、60%–250% 缩放、
+已实现：跟随 Codex 窗口显示额度/余额（X11 事件推送，连接不可用时自动回落到 xwininfo 轮询）、
+透明区域点击穿透、语录切换、拖动与边缘吸附、60%–250% 缩放、
 桌面模式与置顶、右键菜单、设置窗口、开机自启、双数据源（官方额度与 provider 余额）、
 单实例、宿主最小化/隐藏时自动收起。
 
@@ -95,6 +100,12 @@ AppImage 需要 `libfuse.so.2`：Ubuntu 24.04 起默认只装 fuse3，缺库时�
   在有可用显卡的机器上可用 `GPT_NIANG_GPU=1` 打开。
 - **无托盘图标**：GNOME 默认不显示托盘图标，入口放在右键菜单与设置窗口。
 - **缩放换算**：X11 坐标是像素、Electron 窗口 API 是 DIP，两者按显示器缩放换算（本机 1.25）。
-  窗口实际像素尺寸会由 Chromium 取整，跟随计算始终以真实尺寸为准。
-- **窗口尺寸微调**：XWayland 下每次真正移动窗口都会被合成器追加约 2px，因此跟随位置按
-  请求尺寸计算（而不是回读的尺寸），并在漂移超过 2px 时重新校正；宿主静止时不做任何移动。
+  窗口实际像素尺寸会由 Chromium 取整（350 DIP 在本机是 438px），跟随位置仍按请求尺寸计算。
+- **窗口尺寸看守**：窗口尺寸不用 `resizable: false` 固定，而是显式设置 min/max —— 那个开关
+  会把最大值钉在当时的大小上，而 XWayland 在窗口部分出屏时会被合成器改大，于是一旦变大就
+  再也缩不回来（实测过一个 2842×2635 的挂件窗口压住整个屏幕下半部）。现在所有移动路径都会
+  把整窗限制在显示器内，另有看守按需要把尺寸拉回请求值，`npm run spike` 可验证。
+- **点击穿透**：Electron 只能整窗开关鼠标输入（`setIgnoreMouseEvents`，Linux 不支持
+  `forward`），因此主进程以 60Hz 采样指针位置，指针进入挂件矩形后才请渲染进程做命中测试
+  （角色按贴图 alpha 逐像素判定，气泡只在其轮廓/文字/按钮上命中），其余透明区域一律穿透。
+  拖动与右键菜单打开时强制保持可交互。设置里可整体关闭穿透。

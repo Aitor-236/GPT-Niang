@@ -8,6 +8,7 @@ const elements = {
   volume: document.getElementById('volume'),
   volumeValue: document.getElementById('volume-value'),
   clickAdvance: document.getElementById('click-advance'),
+  clickThrough: document.getElementById('click-through'),
   quotaSource: document.getElementById('quota-source'),
   quotaStatus: document.getElementById('quota-status'),
   refresh: document.getElementById('refresh'),
@@ -53,11 +54,13 @@ function render(state) {
   elements.volume.value = String(settings.sound.volume);
   elements.volumeValue.textContent = percent(settings.sound.volume);
   elements.clickAdvance.checked = settings.clickToAdvance !== false;
+  elements.clickThrough.checked = settings.clickThrough !== false;
   elements.quotaSource.value = settings.quotaSource;
   elements.autostart.checked = Boolean(state.autostart);
   elements.quotaStatus.textContent = describeStatus(state.snapshot);
   elements.environment.textContent = [
     '会话：X11 ' + (state.x11 ? '可用' : '不可用（跟随模式需要 --ozone-platform=x11）'),
+    '跟随方式：' + (state.eventFollow ? 'X11 事件推送' : 'xwininfo 轮询'),
     '挂件可见：' + (state.visible ? '是' : '否'),
     '数据目录：' + (state.dataDir ?? '（见日志）')
   ].join('\n');
@@ -95,6 +98,7 @@ elements.volume.addEventListener('input', () => {
   if (!loading) void patch({sound: {volume: Number(elements.volume.value)}});
 });
 elements.clickAdvance.addEventListener('change', () => void patch({clickToAdvance: elements.clickAdvance.checked}));
+elements.clickThrough.addEventListener('change', () => void patch({clickThrough: elements.clickThrough.checked}));
 elements.quotaSource.addEventListener('change', () => {
   void patch({quotaSource: elements.quotaSource.value}).then(() => window.niang.refresh());
 });

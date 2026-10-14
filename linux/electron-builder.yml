@@ -42,6 +42,12 @@ linux:
   maintainer: Aitor <aitor.x@outlook.com>
   # Electron uses desktopName for WM_CLASS so the window links to this entry.
   syncDesktopName: true
+  # The widget has to read another window's geometry and position itself, which
+  # only the X11 backend can do. Both the deb desktop entry and the AppImage
+  # launcher carry this switch; main.js also relaunches itself once with the
+  # flag when it detects a Wayland session without it.
+  executableArgs:
+    - --ozone-platform=x11
   synopsis: 跟随 Codex 窗口显示额度与语录的桌面挂件
   description: >-
     白发紫瞳龙娘挂件：读取本机 Codex 的额度窗口（或 API Key 登录下的 provider
@@ -56,3 +62,11 @@ linux:
 deb:
   depends:
     - nodejs
+
+# An AppImage cannot keep the setuid sandbox helper, and electron-builder's
+# default for this target is --no-sandbox; setting executableArgs here replaces
+# that default, so it has to be spelled out again next to the X11 switch.
+appImage:
+  executableArgs:
+    - --ozone-platform=x11
+    - --no-sandbox

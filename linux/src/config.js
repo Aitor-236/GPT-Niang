@@ -27,6 +27,9 @@ export const DEFAULT_SETTINGS = {
   scale: 1,
   sound: {enabled: true, volume: 0.8},
   clickToAdvance: true,
+  // Transparent parts of the widget window are transparent to the pointer as
+  // well, so the chat input underneath stays clickable.
+  clickThrough: true,
   followHz: 30,
   discoveryIntervalMs: 250,
   autostart: false
@@ -55,6 +58,7 @@ export function normalizeSettings(raw) {
     quotaSource: ['auto', 'codex', 'deepseek'].includes(merged.quotaSource) ? merged.quotaSource : 'auto',
     hostInsets: {...DEFAULT_SETTINGS.hostInsets, ...(merged.hostInsets ?? {})},
     sound: {...DEFAULT_SETTINGS.sound, ...(merged.sound ?? {})},
+    clickThrough: merged.clickThrough !== false,
     followHz: Math.min(60, Math.max(5, Number.parseInt(merged.followHz, 10) || DEFAULT_SETTINGS.followHz)),
     discoveryIntervalMs: Math.min(2000, Math.max(100, Number.parseInt(merged.discoveryIntervalMs, 10) || DEFAULT_SETTINGS.discoveryIntervalMs))
   };

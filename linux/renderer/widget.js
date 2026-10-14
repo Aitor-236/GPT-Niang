@@ -12,6 +12,11 @@ const quotaView = document.getElementById('quota-view');
 const liveDot = document.getElementById('live-dot');
 const girl = document.getElementById('girl');
 const menuButton = document.getElementById('menu-button');
+const hitTest = window.NiangHitTest;
+// The sprite's alpha channel comes from the main process; until it arrives the
+// character counts as a solid rectangle, which errs towards being clickable.
+const sprite = {image: {width: 0, height: 0}, mask: null};
+let lastHitReport = null;
 
 const DESIGN_WINDOW = 350;
 const DESIGN_STAGE = 378;
@@ -26,9 +31,64 @@ let hideTimer = null;
 let lastQuote = '';
 let dragging = false;
 let moved = false;
+let dragFrame = 0;
+let dragPoint = null;
 const dragOrigin = {x: 0, y: 0};
 const pressAudio = new Audio(PRESS_SOUND);
 const releaseAudio = new Audio(RELEASE_SOUND);
+
+// The headless render check loads this file without the pass-through API, so
+// every call into it is optional.
+async function loadSpriteMask() {
+  try {
+    const mask = await window.niang.spriteMask?.();
+    if (!mask) return;
+    sprite.image = {width: mask.sourceWidth, height: mask.sourceHeight};
+    sprite.mask = mask;
+  } catch {}
+}
+void loadSpriteMask();
+
+// Pointer hit testing for the transparent parts of the window: the main process
+// asks about one point and switches the window's input shape accordingly.
+function hitAt(point) {
+  // A missing module means the page was built without hit-test.cjs; treating
+  // every point as interactive then keeps the widget usable, at the cost of the
+  // pass-through that module exists for.
+  if (!hitTest) return true;
+  const element = document.elementFromPoint(point.x, point.y);
+  const kind = hitTest.classifyHit(element, {girl, bubble});
+  const rect = girl.getBoundingClientRect();
+  return hitTest.decideHit({
+    kind,
+    point,
+    rect: {left: rect.left, top: rect.top, width: rect.width, height: rect.height},
+    image: sprite.image,
+    mask: sprite.mask,
+    flip: stage.classList.contains('facing-left')
+  });
+}
+
+window.niang.onHitTest?.(payload => {
+  window.niang.hitResult({token: payload.token, hit: hitAt({x: payload.x, y: payload.y})});
+});
+
+// While the window is receiving the pointer it can report leaving an
+// interactive area itself, instead of waiting for the next sample.
+document.addEventListener('pointermove', event => {
+  // Chromium can report the last known position again while the input shape is
+  // changing; a point outside the viewport says nothing about this window.
+  if (event.clientX < 0 || event.clientY < 0 || event.clientX > window.innerWidth || event.clientY > window.innerHeight) return;
+  const hit = hitAt({x: event.clientX, y: event.clientY});
+  if (hit === lastHitReport) return;
+  lastHitReport = hit;
+  window.niang.hitChanged?.({hit});
+});
+document.addEventListener('pointerleave', () => {
+  if (lastHitReport === false) return;
+  lastHitReport = false;
+  window.niang.hitChanged?.({hit: false});
+});
 
 const rows = [
   {root: document.getElementById('row-0'), label: null, value: null, bar: null, fill: null, reset: null},
@@ -270,13 +330,36 @@ girl.addEventListener('pointermove', event => {
   if (!moved && Math.abs(event.screenX - dragOrigin.x) + Math.abs(event.screenY - dragOrigin.y) < 4) return;
   moved = true;
   girl.dataset.dragged = '1';
-  window.niang.pointer({type: 'move', x: event.screenX, y: event.screenY});
+  dragPoint = {x: event.screenX, y: event.screenY};
+  // A mouse that reports faster than the display would ask for more window
+  // moves than can be shown; one per frame keeps the window under the cursor
+  // without queueing stale positions.
+  if (dragFrame) return;
+  dragFrame = requestAnimationFrame(() => {
+    dragFrame = 0;
+    if (dragPoint) window.niang.pointer({type: 'move', x: dragPoint.x, y: dragPoint.y});
+  });
 });
+function flushDrag() {
+  if (dragFrame) {
+    cancelAnimationFrame(dragFrame);
+    dragFrame = 0;
+  }
+  if (dragPoint) window.niang.pointer({type: 'move', x: dragPoint.x, y: dragPoint.y});
+}
 function endDrag(event) {
   if (!dragging) return;
   dragging = false;
   girl.classList.remove('pressed');
-  window.niang.pointer({type: 'up', x: event.screenX, y: event.screenY});
+  const point = {x: event.screenX, y: event.screenY};
+  if (moved) {
+    // The drop position must be the last pointer position, not the last frame
+    // that happened to be sent.
+    dragPoint = point;
+    flushDrag();
+  }
+  dragPoint = null;
+  window.niang.pointer({type: 'up', x: point.x, y: point.y});
 }
 girl.addEventListener('pointerup', endDrag);
 girl.addEventListener('pointercancel', endDrag);

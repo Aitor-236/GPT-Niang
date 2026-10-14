@@ -9,6 +9,13 @@ contextBridge.exposeInMainWorld('niang', {
   refresh: () => ipcRenderer.invoke('quota:refresh'),
   pointer: payload => ipcRenderer.send('widget:pointer', payload),
   menu: () => ipcRenderer.send('widget:menu'),
+  // Input pass-through: the main process asks whether a window-local point is
+  // over something the user can interact with, and the renderer reports when
+  // the pointer has left that area again.
+  onHitTest: callback => ipcRenderer.on('hit-test', (_event, payload) => callback(payload)),
+  hitResult: payload => ipcRenderer.send('hit-result', payload),
+  hitChanged: payload => ipcRenderer.send('hit-changed', payload),
+  spriteMask: () => ipcRenderer.invoke('sprite:mask'),
   openSettings: () => ipcRenderer.invoke('settings:open'),
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

@@ -102,3 +102,12 @@ export function snappedAnchor(x, width, host) {
 export function samePoint(a, b) {
   return Boolean(a && b) && a.x === b.x && a.y === b.y;
 }
+
+// The widget watchdog asks this before it re-applies the window size. Chromium
+// rounds the pixel size up to the device grid (a 350 DIP window is ~440 px on a
+// 1.25 display), so a few pixels of difference is normal and correcting it
+// would resize the window on every tick.
+export function sizeDriftExceeds(actual, desiredPixels, tolerance) {
+  if (!actual || !Number.isFinite(desiredPixels)) return false;
+  return Math.abs(actual.width - desiredPixels) > tolerance || Math.abs(actual.height - desiredPixels) > tolerance;
+}

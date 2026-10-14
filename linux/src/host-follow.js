@@ -1,9 +1,17 @@
 // Keeps the widget attached to the Codex chat window.
 //
 // The Windows build uses WinEvent hooks and the macOS build samples the
-// WindowServer. Neither exists here, so this is a single polling loop: window
-// discovery at a low rate, geometry sampling at a higher rate, exactly like
-// the macOS port (polling, not a zero-lag attachment guarantee).
+// WindowServer. Neither exists here, so the port has two modes:
+//
+//   * event mode (a `source` is supplied, see ./x11-connection.js): the X
+//     server pushes ConfigureNotify for the window being followed and
+//     substructure changes on the root, and every question is answered on the
+//     open socket. A slow safety tick still runs, so a missed event cannot
+//     leave the widget stranded.
+//   * polling mode (no `source`): the original single loop - window discovery
+//     at a low rate and geometry sampling at a higher one, both by forking
+//     xwininfo. This is also the fallback when the X11 connection is
+//     unavailable.
 
 import {
   listWindows,
@@ -33,6 +41,12 @@ export const FOLLOW_DEFAULTS = {
 };
 
 const ABOVE_ATOM = '_NET_WM_STATE_ABOVE';
+// One window move produces several ConfigureNotify packets; coalescing them
+// keeps a burst from turning into a burst of geometry queries.
+const EVENT_COALESCE_MS = 16;
+// A window appearing or disappearing can change which chat window is the host;
+// that is worth a full walk right away. Anything else waits for the next one.
+const EVENT_FULL_DISCOVERY_MS = 1000;
 
 export function createHostFollower(port, options = {}) {
   const settings = {
@@ -41,12 +55,13 @@ export function createHostFollower(port, options = {}) {
     offsets: {...FOLLOW_DEFAULTS.offsets, ...(options.offsets ?? {})}
   };
   const tools = settings.tools ?? {};
-  const runListWindows = tools.listWindows ?? listWindows;
+  const source = settings.source ?? null;
+  const runListWindows = tools.listWindows ?? source?.listWindows ?? listWindows;
   const runListMonitors = tools.listMonitors ?? listMonitors;
-  const runQueryWindow = tools.queryWindow ?? queryWindow;
-  const runReadWorkArea = tools.readWorkArea ?? readWorkArea;
-  const runReadWindowState = tools.readWindowState ?? readWindowState;
-  const runSetTransientFor = tools.setTransientFor ?? setTransientFor;
+  const runQueryWindow = tools.queryWindow ?? source?.queryWindow ?? queryWindow;
+  const runReadWorkArea = tools.readWorkArea ?? source?.readWorkArea ?? readWorkArea;
+  const runReadWindowState = tools.readWindowState ?? source?.readWindowState ?? readWindowState;
+  const runSetTransientFor = tools.setTransientFor ?? source?.setTransientFor ?? setTransientFor;
   const now = settings.now ?? Date.now;
 
   let timer = null;
@@ -60,7 +75,34 @@ export function createHostFollower(port, options = {}) {
   let visible = false;
   let aboveApplied = false;
   let lastPosition = null;
-  const stats = {polls: 0, discoveries: 0, moves: 0, hidden: 0, maxPollMs: 0, maxDiscoveryMs: 0, hostSwitches: 0};
+  let immediatePending = false;
+  let forceDiscovery = false;
+  let watchedId = null;
+  let unwatchHost = null;
+  let unsubscribe = null;
+  const stats = {polls: 0, discoveries: 0, moves: 0, hidden: 0, maxPollMs: 0, maxDiscoveryMs: 0, hostSwitches: 0, events: 0};
+
+  const tickIntervalMs = () => (source
+    ? Math.max(50, settings.discoveryIntervalMs)
+    : Math.max(10, Math.round(1000 / settings.followHz)));
+
+  // In event mode a full window-tree walk is the expensive part, so it runs on
+  // its own slower gate and immediately when a window appears or disappears.
+  const discoveryGateMs = () => (source
+    ? Math.max(EVENT_FULL_DISCOVERY_MS, settings.discoveryIntervalMs)
+    : settings.discoveryIntervalMs);
+
+  // One queued tick at a time. An event that arrives while a tick is running is
+  // remembered so the next tick starts as soon as this one finishes.
+  function schedule(immediate = false) {
+    if (!running) return;
+    if (immediate) immediatePending = true;
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void tick();
+    }, immediatePending ? EVENT_COALESCE_MS : tickIntervalMs());
+  }
 
   // Only the chat window is interesting; helper surfaces (the app keeps a
   // handful of 1x1 to 200x200 windows and one taller-than-screen window) are
@@ -85,21 +127,49 @@ export function createHostFollower(port, options = {}) {
     if (!chosen) {
       host = null;
       stableSamples = 0;
+      watchHost();
       return null;
     }
     const info = await runQueryWindow(chosen.id);
     host = {...chosen, ...info, id: chosen.id, name: chosen.name};
+    watchHost();
     if (!previous || previous.id !== host.id) {
       stableSamples = 0;
       aboveApplied = false;
       stats.hostSwitches += 1;
       port.log?.('host', {id: host.id, name: host.name, rect: rectOf(host)});
-      void runSetTransientFor(widgetId, host.id).catch(() => {});
+      // The widget has no X id until its window has been shown, which happens
+      // after this first discovery; main.js sets the hint again then.
+      if (widgetId && widgetId !== '0x0') void runSetTransientFor(widgetId, host.id).catch(() => {});
     }
     const elapsed = now() - startedAt;
     stats.discoveries += 1;
     stats.maxDiscoveryMs = Math.max(stats.maxDiscoveryMs, elapsed);
     return host;
+  }
+
+  // Follow the geometry of whichever window is currently the host. The watch
+  // only subscribes to StructureNotify, which any client may select on any
+  // window, so pointing it at another application's window is allowed.
+  function watchHost() {
+    if (!source?.watchWindow) return;
+    const id = host?.id ?? null;
+    if (id === watchedId) return;
+    if (unwatchHost) unwatchHost();
+    unwatchHost = null;
+    watchedId = id;
+    if (!id) return;
+    unwatchHost = source.watchWindow(id, change => {
+      if (change?.kind !== 'configure') return;
+      stats.events += 1;
+      schedule(true);
+    });
+  }
+
+  function releaseHost() {
+    if (unwatchHost) unwatchHost();
+    unwatchHost = null;
+    watchedId = null;
   }
 
   function rectOf(window) {
@@ -127,16 +197,22 @@ export function createHostFollower(port, options = {}) {
     if (!running) return;
     try {
       const startedAt = now();
-      if (startedAt - lastDiscovery >= settings.discoveryIntervalMs) {
+      const due = startedAt - lastDiscovery >= discoveryGateMs() || forceDiscovery;
+      if (due || !host) {
         lastDiscovery = startedAt;
+        forceDiscovery = false;
         await discover();
-      } else if (host) {
+      } else {
         const info = await runQueryWindow(host.id);
         host = {...host, ...info};
       }
       const elapsed = now() - startedAt;
       stats.polls += 1;
       stats.maxPollMs = Math.max(stats.maxPollMs, elapsed);
+
+      // suspend() stops the loop; a tick that was already in flight must not
+      // move the window out from under a drag that started while it waited.
+      if (!running) return;
 
       if (!host || !hostIsVisible(host, bounds())) {
         // A short grace period absorbs transient unmapped samples while the
@@ -182,7 +258,9 @@ export function createHostFollower(port, options = {}) {
     } catch (error) {
       port.log?.('error', {message: error?.message ?? String(error)});
     } finally {
-      if (running) timer = setTimeout(tick, Math.max(10, Math.round(1000 / settings.followHz)));
+      const immediate = immediatePending;
+      immediatePending = false;
+      if (running) schedule(immediate);
     }
   }
 
@@ -191,12 +269,21 @@ export function createHostFollower(port, options = {}) {
       if (running) return;
       running = true;
       lastDiscovery = 0;
+      if (source?.subscribe) {
+        unsubscribe = source.subscribe(change => {
+          if (change?.kind === 'windows') forceDiscovery = true;
+          schedule(true);
+        });
+      }
       void tick();
     },
     stop() {
       running = false;
       if (timer) clearTimeout(timer);
       timer = null;
+      if (unsubscribe) unsubscribe();
+      unsubscribe = null;
+      releaseHost();
     },
     // Used by the drag handler: while the user is dragging, the widget owns
     // its position and following is suspended.

@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld('niang', {
   refresh: async () => state.snapshot,
   pointer: () => {},
   menu: () => {},
+  // Input pass-through: the render check has no real pointer, so the mask is
+  // absent (the character then counts as a solid rectangle) and the hit test is
+  // never driven from the main process.
+  spriteMask: async () => null,
+  onHitTest: () => {},
+  hitResult: () => {},
+  hitChanged: () => {},
   openSettings: async () => true,
   settings: {get: async () => state.settings, set: async () => state.settings},
   quotes: {

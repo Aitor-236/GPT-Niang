@@ -21,6 +21,7 @@ import {
   setTransientFor,
   windowHandleToXid
 } from '../src/x11.js';
+import {createX11Connection} from '../src/x11-connection.js';
 import {codexWindowCandidates, followPosition, pickHost} from '../src/geometry.js';
 import {createHostFollower} from '../src/host-follow.js';
 
@@ -194,6 +195,61 @@ async function run() {
     stats: follower.stats
   };
   if (follower.host?.id !== host.id) report.failures.push('follower did not keep the chat window as host');
+
+  // 6. event subscription. This is what lets the widget react to a window move
+  // instead of sampling it: does the server deliver ConfigureNotify for a
+  // window this client does not own? Our own test window stands in for the
+  // chat window, which cannot be moved without disturbing the user.
+  const connection = createX11Connection({log: () => {}});
+  try {
+    await connection.connect();
+    let events = 0;
+    const unwatch = connection.watchWindow(widgetId, () => {
+      events += 1;
+    });
+    for (let index = 0; index < 10; index += 1) {
+      win.setPosition(120 + index * 4, 120 + index * 3);
+      await wait(80);
+    }
+    await wait(300);
+    unwatch();
+    const geometry = await connection.geometryOf(widgetId);
+    report.steps.events = {configureNotify: events, geometryAfterMoves: geometry};
+    if (events === 0) report.failures.push('no ConfigureNotify arrived for a watched window');
+    // Watching the chat window is the same call; report what it sees while the
+    // spike runs, which is only interesting if the window is moved by hand.
+    let hostEvents = 0;
+    const unwatchHost = connection.watchWindow(host.id, () => {
+      hostEvents += 1;
+    });
+    await wait(1000);
+    unwatchHost();
+    report.steps.hostEvents = {configureNotify: hostEvents};
+  } catch (error) {
+    report.failures.push('x11 connection failed: ' + (error?.message ?? String(error)));
+  } finally {
+    connection.close();
+  }
+
+  // 7. input shape. The transparent parts of the widget must be able to hand
+  // the pointer to the window underneath.
+  try {
+    win.setIgnoreMouseEvents(true);
+    await wait(200);
+    const stateWhenIgnoring = await readWindowState(widgetId);
+    win.setIgnoreMouseEvents(false);
+    await wait(200);
+    const after = await queryWindow(widgetId);
+    report.steps.inputShape = {
+      toggled: true,
+      aboveWhileIgnoring: stateWhenIgnoring.includes('_NET_WM_STATE_ABOVE'),
+      stillViewable: after.viewable,
+      size: {width: after.width, height: after.height}
+    };
+    if (!after.viewable) report.failures.push('window stopped being viewable after an input-shape toggle');
+  } catch (error) {
+    report.failures.push('input shape toggle failed: ' + (error?.message ?? String(error)));
+  }
   return report;
 }
 

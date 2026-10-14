@@ -9,6 +9,7 @@ import {
   intersects,
   pickHost,
   samePoint,
+  sizeDriftExceeds,
   snappedAnchor,
   visibleArea
 } from '../src/geometry.js';
@@ -98,4 +99,16 @@ test('samePoint compares positions only', () => {
   assert.equal(samePoint({x: 1, y: 2}, {x: 1, y: 2}), true);
   assert.equal(samePoint({x: 1, y: 2}, {x: 1, y: 3}), false);
   assert.equal(samePoint(null, {x: 1, y: 2}), false);
+});
+
+// The watchdog must not treat Chromium's rounding up to the device grid as
+// drift - but it must catch the runaway growth that pinned the widget at
+// 2842x2635 px, which is also what makes the window swallow clicks.
+test('sizeDriftExceeds tolerates rounding and catches real growth', () => {
+  assert.equal(sizeDriftExceeds({width: 440, height: 438}, 438, 6), false);
+  assert.equal(sizeDriftExceeds({width: 450, height: 438}, 438, 6), true);
+  assert.equal(sizeDriftExceeds({width: 438, height: 500}, 438, 6), true);
+  assert.equal(sizeDriftExceeds({width: 2842, height: 2635}, 438, 6), true);
+  assert.equal(sizeDriftExceeds(null, 438, 6), false);
+  assert.equal(sizeDriftExceeds({width: 10, height: 10}, Number.NaN, 6), false);
 });
