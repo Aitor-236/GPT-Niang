@@ -29,6 +29,7 @@ import {assetsDir} from './runtime.js';
 import {clearCustomQuotes, pickQuote, readBuiltinQuotes, readCustomQuotes, writeCustomQuotes} from './quotes.js';
 import {queryWindow, windowHandleToXid} from './x11.js';
 import {snappedAnchor} from './geometry.js';
+import {ASSET_SCHEME, assetMimeType, resolveAssetPath} from './asset-url.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -135,18 +136,28 @@ function applyWidgetSize() {
   state.widget.setSize(size, size);
 }
 
-// Under XWayland this desktop grows the window by a pixel or two on every
-// move, which would make the widget creep larger while it follows the chat
-// window. The wanted size is re-asserted whenever the drift becomes visible,
-// so the size stays put without fighting a one-pixel rounding difference.
-function enforceWidgetSize() {
-  if (!state.widget || state.widget.isDestroyed()) return;
+// Under XWayland this desktop grows the window by a pixel or two on every real
+// move, so the widget creeps larger while it follows a chat window that is
+// being dragged. Electron's own size report does not always see that growth,
+// so the correction compares the real X11 geometry with the wanted size and
+// re-applies it once the drift becomes visible.
+async function verifyWidgetSize() {
+  if (!state.widget || state.widget.isDestroyed() || !state.widgetXid) return;
   const desired = defaultWindowSize(state.settings.scale);
-  const [width, height] = state.widget.getSize();
-  if (Math.abs(width - desired) > 2 || Math.abs(height - desired) > 2) {
-    log('widget-size-correction', {dip: [width, height], desired});
-    state.widget.setSize(desired, desired);
+  const desiredPixels = dipsToPixels(desired, state.scaleFactor);
+  let actual;
+  try {
+    actual = await queryWindow(state.widgetXid);
+  } catch {
+    return;
   }
+  if (!actual || Math.abs(actual.width - desiredPixels) <= 4) return;
+  log('widget-size-correction', {
+    actualPixels: [actual.width, actual.height],
+    desiredPixels,
+    electronDip: state.widget.getSize()
+  });
+  state.widget.setSize(desired, desired);
 }
 
 async function showWidget() {
@@ -196,12 +207,10 @@ function followerPort() {
     move: (x, y) => {
       if (!state.widget || state.widget.isDestroyed()) return;
       if (process.env.GPT_NIANG_DEBUG) log('move', {x, y, dip: state.widget.getSize()});
-      enforceWidgetSize();
       state.widget.setPosition(pixelsToDips(x, state.scaleFactor), pixelsToDips(y, state.scaleFactor));
     },
     moveBeforeShow: (x, y) => {
       if (!state.widget || state.widget.isDestroyed()) return;
-      enforceWidgetSize();
       state.widget.setPosition(pixelsToDips(x, state.scaleFactor), pixelsToDips(y, state.scaleFactor));
     },
     setVisible: value => {
@@ -345,6 +354,7 @@ async function refreshQuota({silent = false} = {}) {
 
 function pollStatus() {
   if (!state.widget || state.widget.isDestroyed()) return;
+  void verifyWidgetSize();
   // Cheap enough to always read: a small JSON file once per second, and the
   // settings window wants a live view too.
   const snapshot = state.backend.snapshot();
@@ -489,30 +499,27 @@ function quit() {
 // Scheme privileges must be declared before the app is ready; the handler
 // itself can only be installed once it is.
 protocol.registerSchemesAsPrivileged([
-  {scheme: 'gpt-asset', privileges: {standard: true, secure: true, supportFetchAPI: true}}
+  {scheme: ASSET_SCHEME, privileges: {standard: true, secure: true, supportFetchAPI: true}}
 ]);
 
 function handleAssetProtocol() {
   const root = path.resolve(assetRoot());
-  protocol.handle('gpt-asset', request => {
-    const url = new URL(request.url);
-    const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '');
-    const file = path.resolve(root, relative);
-    if (file !== root && !file.startsWith(root + path.sep)) return new Response('forbidden', {status: 403});
+  protocol.handle(ASSET_SCHEME, request => {
+    const file = resolveAssetPath(root, request.url);
+    if (!file) {
+      log('asset-forbidden', {url: request.url});
+      return new Response('forbidden', {status: 403});
+    }
     let contents;
     try {
       contents = fs.readFileSync(file);
     } catch {
+      // A wrong asset URL leaves the character or the sounds silently missing,
+      // so the miss is recorded instead of only returning 404.
+      log('asset-missing', {url: request.url, file});
       return new Response('not found', {status: 404});
     }
-    const mime = {
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.wav': 'audio/wav',
-      '.json': 'application/json',
-      '.css': 'text/css'
-    }[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
-    return new Response(new Uint8Array(contents), {headers: {'content-type': mime}});
+    return new Response(new Uint8Array(contents), {headers: {'content-type': assetMimeType(file)}});
   });
 }
 

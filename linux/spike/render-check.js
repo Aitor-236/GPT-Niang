@@ -9,6 +9,8 @@ import {fileURLToPath} from 'node:url';
 
 import {app, BrowserWindow, protocol} from 'electron';
 
+import {ASSET_SCHEME, assetMimeType, resolveAssetPath} from '../src/asset-url.js';
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 app.commandLine.appendSwitch('ozone-platform', 'x11');
@@ -16,7 +18,7 @@ app.disableHardwareAcceleration();
 // The renderer pulls the character art and sounds through the app's custom
 // scheme, so the check has to provide it as well.
 protocol.registerSchemesAsPrivileged([
-  {scheme: 'gpt-asset', privileges: {standard: true, secure: true, supportFetchAPI: true}}
+  {scheme: ASSET_SCHEME, privileges: {standard: true, secure: true, supportFetchAPI: true}}
 ]);
 const assets = path.resolve(here, '..', '..', 'gpt-niang-usage', 'assets');
 
@@ -103,12 +105,11 @@ const READ_QUOTA = [
 ].join('\n');
 
 app.whenReady().then(async () => {
-  protocol.handle('gpt-asset', request => {
-    const relative = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, '');
-    const file = path.resolve(assets, relative);
-    if (file !== assets && !file.startsWith(assets + path.sep)) return new Response('forbidden', {status: 403});
+  protocol.handle(ASSET_SCHEME, request => {
+    const file = resolveAssetPath(assets, request.url);
+    if (!file) return new Response('forbidden', {status: 403});
     try {
-      return new Response(new Uint8Array(fs.readFileSync(file)), {headers: {'content-type': 'image/png'}});
+      return new Response(new Uint8Array(fs.readFileSync(file)), {headers: {'content-type': assetMimeType(file)}});
     } catch {
       return new Response('not found', {status: 404});
     }
@@ -126,7 +127,14 @@ app.whenReady().then(async () => {
     }
   });
   await window.loadFile(path.join(here, '..', 'renderer', 'widget.html'));
+  // capturePage needs a visible surface, so the check shows the widget briefly.
+  window.showInactive();
   await wait(300);
+  // The sprite and the sounds load through the custom scheme, so a broken URL
+  // shows up here instead of silently leaving the character invisible.
+  const assetsLoaded = await window.webContents.executeJavaScript(
+    '({sprite: document.getElementById("girl").naturalWidth, spriteHeight: document.getElementById("girl").naturalHeight})'
+  );
 
   const results = [];
   for (const testCase of cases) {
@@ -144,6 +152,11 @@ app.whenReady().then(async () => {
       await window.webContents.executeJavaScript('document.getElementById("girl").click()');
       await wait(320);
       const quota = await window.webContents.executeJavaScript(READ_QUOTA);
+      if (process.env.GPT_NIANG_CAPTURE) {
+        const image = await window.webContents.capturePage();
+        fs.writeFileSync(process.env.GPT_NIANG_CAPTURE, image.toPNG());
+        console.log('CAPTURED ' + process.env.GPT_NIANG_CAPTURE + ' ' + JSON.stringify(image.getSize()));
+      }
       await window.webContents.executeJavaScript('document.getElementById("girl").click()');
       await wait(320);
       const quote = await window.webContents.executeJavaScript(
@@ -157,6 +170,6 @@ app.whenReady().then(async () => {
     }
   }
   window.destroy();
-  console.log('RENDER_REPORT ' + JSON.stringify(results, null, 2));
+  console.log('RENDER_REPORT ' + JSON.stringify({assetsLoaded, results}, null, 2));
   app.exit(0);
 });
