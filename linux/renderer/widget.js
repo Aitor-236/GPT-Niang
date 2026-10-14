@@ -26,6 +26,7 @@ const RELEASE_SOUND = 'gpt-asset://release.wav';
 let settings = null;
 let snapshot = null;
 let windowSize = 0;
+let peak = null;
 let view = 'collapsed';
 let hideTimer = null;
 let lastQuote = '';
@@ -169,11 +170,66 @@ function renderRow(row, window_) {
 
 function renderBalanceRow(row, balance) {
   row.label.textContent = 'DeepSeek 余额';
-  row.value.textContent = money(balance.total, balance.currency);
+  // The API reports is_available=false for an account that is out of credit or
+  // restricted; saying so is better than printing a number that cannot be spent.
+  row.value.textContent = balance.available === false ? '不可用' : money(balance.total, balance.currency);
   row.bar.classList.add('hidden-bar');
-  row.reset.textContent = '充值 ' + money(balance.toppedUp ?? 0, balance.currency) + ' · 赠送 ' + money(balance.granted ?? 0, balance.currency);
-  row.reset.title = '';
-  row.root.title = balance.available === false ? 'DeepSeek 余额不可用（账户欠费或受限）' : '';
+  const window_ = peakWindow(balance);
+  row.reset.textContent = window_.line;
+  row.reset.style.color = window_.color;
+  row.reset.title = window_.title;
+  const lines = [
+    'DeepSeek 余额：' + money(balance.total, balance.currency) +
+      '（充值 ' + money(balance.toppedUp ?? 0, balance.currency) +
+      ' · 赠送 ' + money(balance.granted ?? 0, balance.currency) + '）'
+  ];
+  if (balance.available === false) lines.push('账户余额不可用（欠费或受限）');
+  if (peak) lines.push((peak.isPeak ? '当前为高峰时段：' : '当前为优惠时段：') + peak.peakHours, peak.valleyNote);
+  row.root.title = lines.join('\n');
+}
+
+// DeepSeek charges by the Beijing clock, and the widget says which window is in
+// force and how long it lasts. Peak is red and valley green, matching the
+// reference widget's colours.
+const PEAK_COLOR = '#e0433f';
+const VALLEY_COLOR = '#2fa24c';
+
+function duration(seconds) {
+  const minutes = Math.max(0, Math.floor(seconds / 60));
+  if (minutes < 60) return minutes + '分钟';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest === 0 ? hours + '小时' : hours + '小时' + rest + '分';
+  }
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest === 0 ? days + '天' : days + '天' + rest + '小时';
+}
+
+function peakWindow(balance) {
+  if (!peak) {
+    // Without the pricing rule the row keeps its old shape: the credit split.
+    return {
+      line: '充值 ' + money(balance.toppedUp ?? 0, balance.currency) + ' · 赠送 ' + money(balance.granted ?? 0, balance.currency),
+      color: '',
+      title: ''
+    };
+  }
+  const until = Number(peak.nextChangeAt);
+  const left = Number.isFinite(until) && until > 0 ? duration(until - Date.now() / 1000) : null;
+  if (peak.isPeak) {
+    return {
+      line: '高峰 · 距优惠 ' + (left ?? '—'),
+      color: PEAK_COLOR,
+      title: '高峰时段按标准价计费（' + peak.peakHours + '）'
+    };
+  }
+  return {
+    line: '优惠 · 距高峰 ' + (left ?? '—'),
+    color: VALLEY_COLOR,
+    title: '优惠时段按折扣价计费（' + peak.valleyNote + '）'
+  };
 }
 
 function render() {
@@ -271,6 +327,7 @@ function applyState(payload) {
   settings = payload.settings;
   snapshot = payload.snapshot;
   windowSize = Number(payload.windowDip) || 0;
+  peak = payload.peak ?? null;
   stage.classList.toggle('facing-left', settings?.anchor === 'right');
   applyScale();
   render();

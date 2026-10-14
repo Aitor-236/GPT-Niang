@@ -24,13 +24,22 @@ const elements = {
 const percent = value => Math.round(Number(value) * 100) + '%';
 let loading = false;
 
-function describeStatus(snapshot) {
+function describeStatus(snapshot, peak) {
   if (!snapshot) return '尚未读取额度。';
   const lines = [];
   if (snapshot.source === 'deepseek') {
     const balance = snapshot.balance ?? {};
     lines.push('数据源：DeepSeek 余额');
-    if (snapshot.ok) lines.push('余额：' + (balance.total ?? '—') + ' ' + (balance.currency ?? ''));
+    if (snapshot.ok) {
+      lines.push('余额：' + (balance.total ?? '—') + ' ' + (balance.currency ?? ''));
+      lines.push('充值 ' + (balance.toppedUp ?? '—') + ' · 赠送 ' + (balance.granted ?? '—'));
+    }
+    if (peak) {
+      const until = Number(peak.nextChangeAt);
+      const when = Number.isFinite(until) && until > 0 ? new Date(until * 1000).toLocaleTimeString() : '—';
+      lines.push(peak.isPeak ? '当前高峰时段（标准价），' + when + ' 起为优惠时段' : '当前优惠时段（折扣价），' + when + ' 起为高峰时段');
+      lines.push('高峰定义：' + peak.peakHours + '；' + peak.valleyNote);
+    }
   } else {
     lines.push('数据源：Codex 官方额度');
     if (snapshot.planLabel) lines.push('套餐：' + snapshot.planLabel);
@@ -57,7 +66,7 @@ function render(state) {
   elements.clickThrough.checked = settings.clickThrough !== false;
   elements.quotaSource.value = settings.quotaSource;
   elements.autostart.checked = Boolean(state.autostart);
-  elements.quotaStatus.textContent = describeStatus(state.snapshot);
+  elements.quotaStatus.textContent = describeStatus(state.snapshot, state.peak);
   elements.environment.textContent = [
     '会话：X11 ' + (state.x11 ? '可用' : '不可用（跟随模式需要 --ozone-platform=x11）'),
     '跟随方式：' + (state.eventFollow ? 'X11 事件推送' : 'xwininfo 轮询'),

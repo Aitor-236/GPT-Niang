@@ -363,6 +363,29 @@ export function createX11Connection({
     }
   }
 
+  // _NET_WM_DESKTOP: the workspace a window belongs to. Followed so the widget
+  // stays with its chat window when that window moves to another workspace.
+  async function desktop(idValue) {
+    try {
+      const result = await getProperty(toXid(idValue), '_NET_WM_DESKTOP');
+      if (!result || result.data.length < 4) return null;
+      return result.data.readUInt32LE(0) >>> 0;
+    } catch {
+      return null;
+    }
+  }
+
+  async function setDesktop(idValue, value) {
+    try {
+      const property = await internAtom('_NET_WM_DESKTOP');
+      await call('ChangeProperty', 0, toXid(idValue), property, 6 /* CARDINAL */, 32, [value >>> 0]);
+      return true;
+    } catch (error) {
+      log('x11-desktop-failed', {message: error?.message ?? String(error)});
+      return false;
+    }
+  }
+
   async function applyMask(id) {
     const entry = watchers.get(id);
     try {
@@ -457,6 +480,8 @@ export function createX11Connection({
     readWindowState,
     setTransientFor,
     transientFor,
+    desktop,
+    setDesktop,
     watchWindow,
     subscribe,
     close

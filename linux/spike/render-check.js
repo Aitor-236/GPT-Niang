@@ -195,6 +195,14 @@ app.whenReady().then(async () => {
       const payload = JSON.stringify({
         settings,
         snapshot: testCase.snapshot,
+        // DeepSeek's row shows the pricing window and a countdown, so the check
+        // needs that state pushed in too (a peak window ending in 1h35m).
+        peak: {
+          isPeak: true,
+          nextChangeAt: Math.floor(Date.now() / 1000) + 95 * 60,
+          peakHours: '周一至周五 9:00–12:00、14:00–18:00（北京时间）',
+          valleyNote: '其余时段（含周末与法定节假日）为优惠时段'
+        },
         version: '1.3.4',
         autostart: false
       });

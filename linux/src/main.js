@@ -13,7 +13,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 
 import {app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, protocol, screen} from 'electron';
 
@@ -32,7 +32,7 @@ import {createBackend} from './backend.js';
 import {createEventSource, createX11Connection} from './x11-connection.js';
 import {createHostFollower} from './host-follow.js';
 import {isAutostartEnabled, setAutostart} from './autostart.js';
-import {assetsDir} from './runtime.js';
+import {assetsDir, runtimeDir} from './runtime.js';
 import {clearCustomQuotes, pickQuote, readBuiltinQuotes, readCustomQuotes, writeCustomQuotes} from './quotes.js';
 import {
   listWindows,
@@ -153,6 +153,8 @@ const state = {
   forceInteractive: false,
   sizeGuard: {lastAt: 0, corrections: 0},
   sprite: null,
+  peakRule: null,
+  peakKey: null,
   unwatchOwn: null,
   quitting: false,
   x11WarningShown: false
@@ -183,6 +185,30 @@ function sourceSummary(snapshot) {
   };
 }
 
+// DeepSeek prices by Beijing wall clock, so the widget says which window is in
+// force. The rule itself lives in the shared runtime (peak.mjs) next to the
+// quota reader, so the ports cannot drift apart.
+async function loadPeakRule() {
+  try {
+    const file = path.join(runtimeDir({env: process.env, packaged: app.isPackaged}), 'peak.mjs');
+    state.peakRule = await import(pathToFileURL(file).href);
+    // The holiday table only lists the year it was published for; a new year
+    // without dates would quietly mark holidays as peak.
+    const year = new Date(Date.now() + 8 * 3600 * 1000).getUTCFullYear();
+    if (!state.peakRule.peakHolidayCoverage().includes(year)) {
+      log('peak-holidays-missing', {year, covered: state.peakRule.peakHolidayCoverage()});
+    }
+  } catch (error) {
+    log('peak-rule-unavailable', {message: error?.message ?? String(error)});
+    state.peakRule = null;
+  }
+}
+
+function peakState() {
+  if (!state.peakRule) return null;
+  return state.peakRule.describePeak(Math.floor(Date.now() / 1000));
+}
+
 function appState() {
   return {
     settings: state.settings,
@@ -194,6 +220,7 @@ function appState() {
     scaleRange: {min: SCALE_MIN, max: SCALE_MAX},
     x11: Boolean(state.widgetXid),
     eventFollow: Boolean(state.connection?.isConnected()),
+    peak: peakState(),
     // The renderer draws the 378px design stage into a window of this many DIP,
     // so the canvas scales with a fitted (smaller) window.
     windowDip: effectiveWidgetDip(),
@@ -351,6 +378,12 @@ async function attachToHost(hostId) {
   await connection.setTransientFor(state.widgetXid, hostId);
   const owner = await connection.transientFor(state.widgetXid);
   const attached = owner === hostId;
+  // Follow the chat window to another workspace, so the pair is never split
+  // across desktops. Best effort: a window manager may keep its own idea.
+  const desktop = await connection.desktop(hostId);
+  if (desktop !== null) await connection.setDesktop(state.widgetXid, desktop);
+  // Never take keyboard focus: pressing the widget must leave the chat input's
+  // caret where it was (WS_EX_NOACTIVATE on the Windows build).
   state.widget.setAlwaysOnTop(!attached);
   const previous = state.attached;
   state.attached = attached;
@@ -787,6 +820,14 @@ async function refreshQuota({silent = false} = {}) {
 function pollStatus() {
   if (!state.widget || state.widget.isDestroyed()) return;
   void repairWidgetSize();
+  // The peak/valley label changes a few times a day; tell the window when it
+  // does, since the countdown next to it is derived from the same value.
+  const peak = peakState();
+  const peakKey = peak ? `${peak.isPeak}:${peak.nextChangeAt}` : null;
+  if (peakKey !== state.peakKey) {
+    state.peakKey = peakKey;
+    broadcast();
+  }
   // Cheap enough to always read: a small JSON file once per second, and the
   // settings window wants a live view too.
   const snapshot = state.backend.snapshot();
@@ -1055,6 +1096,7 @@ async function start() {
   screen.on('display-added', refreshMonitors);
   screen.on('display-removed', refreshMonitors);
   state.builtinQuotes = readBuiltinQuotes(path.join(assetRoot(), 'quotes.json'));
+  await loadPeakRule();
   // One socket for the whole session: the follow loop, the size watchdog and
   // the input-shape checks all read from it instead of forking xwininfo.
   state.connection = createX11Connection({log});
