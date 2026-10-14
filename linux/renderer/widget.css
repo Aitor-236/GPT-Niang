@@ -94,8 +94,9 @@ body {
 
 #live-dot {
   position: absolute;
-  left: 148px;
-  top: 31px;
+  /* Bubble-relative, like SceneText below: #bubble is already the 14,14 origin. */
+  left: 134px;
+  top: 17px;
   width: 4px;
   height: 4px;
   border-radius: 50%;
@@ -104,8 +105,11 @@ body {
 
 #scene {
   position: absolute;
-  left: 77px;
-  top: 36px;
+  /* WPF puts SceneText at (63,22) inside the bubble canvas, which already sits
+     at (14,14) of the design stage - using stage coordinates here shifted the
+     whole text block down-right and pushed its last line onto the outline. */
+  left: 63px;
+  top: 22px;
   width: 184px;
   height: 115px;
 }

@@ -106,6 +106,44 @@ const READ_QUOTA = [
   "})()"
 ].join('\n');
 
+// Layout audit: the widget is checked against the WPF canvas by numbers,
+// because a wrong box or an ellipsised label is invisible in a text report.
+const READ_LAYOUT = [
+  "(() => {",
+  "  const box = el => { const r = el.getBoundingClientRect(); return {x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height)}; };",
+  "  const scene = document.getElementById('scene');",
+  "  const sceneRect = scene.getBoundingClientRect();",
+  "  const rows = [...document.querySelectorAll('.row')].filter(row => !row.classList.contains('hidden')).map(row => {",
+  "    const reset = row.querySelector('.row-reset');",
+  "    const value = row.querySelector('.row-value');",
+  "    const label = row.querySelector('.row-label');",
+  "    return {",
+  "      label: label.textContent,",
+  "      value: value.textContent,",
+  "      row: box(row),",
+  "      labelBox: box(label),",
+  "      valueBox: box(value),",
+  "      resetBox: box(reset),",
+  "      resetText: reset.textContent,",
+  "      resetEllipsised: reset.scrollWidth > reset.clientWidth + 1,",
+  "      belowScene: box(row).y + box(row).h > sceneRect.y + sceneRect.h + 0.5",
+  "    };",
+  "  });",
+  "  const overlapping = rows.some((row, index) => index > 0 && row.row.y < rows[index - 1].row.y + rows[index - 1].row.h);",
+  "  return {",
+  "    scene: box(scene),",
+  "    bubble: box(document.getElementById('bubble')),",
+  "    header: box(document.getElementById('header')),",
+  "    headerText: document.getElementById('header').textContent,",
+  "    rows,",
+  "    overlapping,",
+  "    documentWidth: document.documentElement.scrollWidth,",
+  "    clientWidth: document.documentElement.clientWidth,",
+  "    font: getComputedStyle(document.getElementById('header')).fontFamily",
+  "  };",
+  "})()"
+].join('\n');
+
 app.whenReady().then(async () => {
   protocol.handle(ASSET_SCHEME, request => {
     const file = resolveAssetPath(assets, request.url);
@@ -121,6 +159,12 @@ app.whenReady().then(async () => {
   const window = new BrowserWindow({
     width: 350,
     height: 350,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    type: 'toolbar',
     show: false,
     webPreferences: {
       preload: path.join(here, 'render-stub.cjs'),
@@ -132,6 +176,12 @@ app.whenReady().then(async () => {
   // capturePage needs a visible surface, so the check shows the widget briefly.
   window.showInactive();
   await wait(300);
+  const windowSize = {dip: window.getSize(), content: window.getContentSize()};
+  if (process.env.GPT_NIANG_CAPTURE_COLLAPSED) {
+    const image = await window.webContents.capturePage();
+    fs.writeFileSync(process.env.GPT_NIANG_CAPTURE_COLLAPSED, image.toPNG());
+    console.log('CAPTURED_COLLAPSED ' + JSON.stringify(image.getSize()));
+  }
   // The sprite and the sounds load through the custom scheme, so a broken URL
   // shows up here instead of silently leaving the character invisible.
   const assetsLoaded = await window.webContents.executeJavaScript(
@@ -154,6 +204,7 @@ app.whenReady().then(async () => {
       await window.webContents.executeJavaScript('document.getElementById("girl").click()');
       await wait(320);
       const quota = await window.webContents.executeJavaScript(READ_QUOTA);
+      const layout = await window.webContents.executeJavaScript(READ_LAYOUT);
       if (process.env.GPT_NIANG_CAPTURE) {
         const image = await window.webContents.capturePage();
         fs.writeFileSync(process.env.GPT_NIANG_CAPTURE, image.toPNG());
@@ -166,12 +217,12 @@ app.whenReady().then(async () => {
       );
       await window.webContents.executeJavaScript('document.getElementById("girl").click()');
       await wait(260);
-      results.push({name: testCase.name, collapsed, quota, quote});
+      results.push({name: testCase.name, collapsed, quota, layout, quote});
     } catch (error) {
       results.push({name: testCase.name, error: error?.message ?? String(error)});
     }
   }
   window.destroy();
-  console.log('RENDER_REPORT ' + JSON.stringify({assetsLoaded, results}, null, 2));
+  console.log('RENDER_REPORT ' + JSON.stringify({assetsLoaded, windowSize, results}, null, 2));
   app.exit(0);
 });
