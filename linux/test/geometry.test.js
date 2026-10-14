@@ -14,7 +14,8 @@ import {
   sizeDriftExceeds,
   snappedAnchor,
   usableArea,
-  visibleArea
+  visibleArea,
+  workAreaAt
 } from '../src/geometry.js';
 
 const monitor = {x: 0, y: 0, width: 2560, height: 1440};
@@ -145,4 +146,19 @@ test('fitSize shrinks the widget to the area it has to live in', () => {
   // The allowance keeps the rounded-up pixel size a little clear of the edge.
   assert.deepEqual(fitSize({width: 438, height: 438}, {width: 420, height: 380}, 4), {width: 416, height: 376});
   assert.deepEqual(fitSize({width: 350, height: 350}, null), {width: 350, height: 350});
+});
+
+// Desktop mode clamps to the work area of the monitor the widget is being
+// dragged onto, which is what the Windows build's Screen::FromPoint does.
+test('workAreaAt picks the work area the point is on, and the nearest one otherwise', () => {
+  const left = {x: 0, y: 0, width: 2048, height: 1152};
+  const right = {x: 2048, y: 0, width: 2560, height: 1440};
+  assert.deepEqual(workAreaAt({x: 100, y: 100}, [left, right]), left);
+  assert.deepEqual(workAreaAt({x: 2048, y: 10}, [left, right]), right);
+  // A point in the gap between two panels, or off the desktop entirely, belongs
+  // to the closest area instead of failing.
+  assert.deepEqual(workAreaAt({x: -400, y: 50}, [left, right]), left);
+  assert.deepEqual(workAreaAt({x: 9000, y: 50}, [left, right]), right);
+  assert.equal(workAreaAt({x: 10, y: 10}, []), null);
+  assert.equal(workAreaAt(null, [left]), null);
 });

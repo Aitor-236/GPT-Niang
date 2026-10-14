@@ -94,6 +94,26 @@ export function fitSize(size, area, allowance = 0) {
   };
 }
 
+// The work area of the monitor a point is on, which is what the Windows build
+// uses for its desktop mode (Screen::FromPoint(...).WorkingArea): the pet is
+// clamped into the panel-free area of whichever monitor it is being dragged
+// onto, so it cannot slide under a panel or rest between two screens.
+export function workAreaAt(point, areas) {
+  if (!point || areas.length === 0) return null;
+  const hit = areas.find(area =>
+    point.x >= area.x && point.x < area.x + area.width &&
+    point.y >= area.y && point.y < area.y + area.height);
+  if (hit) return hit;
+  // A point in a screen gap (or off the desktop) belongs to the nearest area.
+  return areas
+    .map(area => {
+      const dx = Math.max(area.x - point.x, 0, point.x - (area.x + area.width));
+      const dy = Math.max(area.y - point.y, 0, point.y - (area.y + area.height));
+      return {area, distance: dx * dx + dy * dy};
+    })
+    .sort((a, b) => a.distance - b.distance)[0].area;
+}
+
 // Mirrors the Windows build: `left` / `right` / `bottom` are the user's drag
 // offsets from the matching host edge, and the anchor decides which side they
 // are measured from.

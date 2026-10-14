@@ -43,7 +43,7 @@ import {
   setTransientFor,
   windowHandleToXid
 } from './x11.js';
-import {clampToMonitors, sizeDriftExceeds, snappedAnchor} from './geometry.js';
+import {clampToMonitors, sizeDriftExceeds, snappedAnchor, workAreaAt} from './geometry.js';
 import {ASSET_SCHEME, assetMimeType, resolveAssetPath} from './asset-url.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -133,6 +133,7 @@ const state = {
   widgetXid: null,
   scaleFactor: 1,
   monitors: [],
+  desktopAreas: [],
   // The size the follow loop reports as fitting the chat window. Null means
   // "use the configured scale": desktop mode never shrinks the widget.
   fitDip: null,
@@ -285,8 +286,20 @@ function monitorRects() {
   }));
 }
 
+// Same monitors, but the panel-free area: desktop mode keeps the pet inside the
+// work area, the way the Windows build's Screen::WorkingArea does.
+function desktopAreas() {
+  return screen.getAllDisplays().map(display => ({
+    x: Math.round(display.workArea.x * display.scaleFactor),
+    y: Math.round(display.workArea.y * display.scaleFactor),
+    width: Math.round(display.workArea.width * display.scaleFactor),
+    height: Math.round(display.workArea.height * display.scaleFactor)
+  }));
+}
+
 function refreshMonitors() {
   state.monitors = monitorRects();
+  state.desktopAreas = desktopAreas();
 }
 
 // "WxH", for the diagnostic that pretends the chat window is smaller than it is.
@@ -592,6 +605,11 @@ async function showWidget() {
   if (host && state.settings.mode !== 'desktop') await attachToHost(host.id);
   state.widget.showInactive();
   state.visible = true;
+  if (state.settings.mode === 'desktop') void stickToAllWorkspaces();
+  // A window that is mapped without focus is flagged as "demands attention" by
+  // mutter, which shows up as a needs-attention badge on the app; a desktop pet
+  // has nothing to demand. Follow mode is deliberately left alone here.
+  if (state.settings.mode === 'desktop') state.widget.flashFrame(false);
   startPointerTracking();
   await verifyX11();
 }
@@ -685,7 +703,7 @@ function startFollowing() {
   state.follower.start();
 }
 
-function applyMode() {
+function applyMode({initial = false} = {}) {
   if (!state.follower || !state.widget) return;
   if (state.settings.mode === 'desktop') {
     state.follower.stop();
@@ -696,7 +714,16 @@ function applyMode() {
     void detachFromHost();
     const position = state.settings.desktopPosition;
     if (position) state.widget.setPosition(position.x, position.y);
-    else parkOnPrimary();
+    // Switching modes keeps the widget where it is (the Windows build keeps its
+    // frame too); only a fresh start without a remembered position parks it.
+    else if (initial) parkOnDesktop();
+    else {
+      const [x, y] = state.widget.getPosition();
+      void updateSettings({desktopPosition: {x, y}});
+    }
+    // A desktop pet is not owned by the chat window any more, so it should keep
+    // showing when the user switches to another workspace.
+    void stickToAllWorkspaces();
     void showWidget();
   } else {
     // The widget belongs to the chat window: ownership decides the z-order, not
@@ -707,13 +734,23 @@ function applyMode() {
   }
 }
 
-function parkOnPrimary() {
+// Upstream seeds a desktop pet near the chat window's bottom-right corner (24px
+// in). Without a host to measure - desktop mode never runs the follower - the
+// primary display's work area is the honest equivalent.
+function parkOnDesktop() {
   const {workArea} = screen.getPrimaryDisplay();
-  const size = defaultWindowSize(state.settings.scale);
+  const size = effectiveWidgetDip();
   state.widget.setPosition(
-    workArea.x + workArea.width - size - 40,
-    workArea.y + workArea.height - size - 40
+    workArea.x + workArea.width - size - 24,
+    workArea.y + workArea.height - size - 24
   );
+}
+
+// _NET_WM_DESKTOP = 0xffffffff makes the window sticky: visible on every
+// workspace, which is what "整个桌面自由拖动" means once the widget has no owner.
+async function stickToAllWorkspaces() {
+  if (!state.widgetXid || !state.connection?.isConnected()) return;
+  await state.connection.setDesktop(state.widgetXid, 0xffffffff);
 }
 
 async function updateSettings(patch, {silent = false} = {}) {
@@ -780,9 +817,9 @@ function showContextMenu() {
     {type: 'separator'},
     {label: '立即刷新', click: () => void refreshQuota()},
     {
-      label: '显示模式',
+      label: '显示与位置',
       submenu: [
-        {label: '跟随 Codex 窗口', type: 'radio', checked: state.settings.mode === 'host', click: () => void updateSettings({mode: 'host'})},
+        {label: '仅在 Codex 窗口内', type: 'radio', checked: state.settings.mode === 'host', click: () => void updateSettings({mode: 'host'})},
         {label: '整个桌面自由拖动', type: 'radio', checked: state.settings.mode === 'desktop', click: () => void updateSettings({mode: 'desktop'})}
       ]
     },
@@ -965,8 +1002,18 @@ function clampPosition(x, y) {
     width: dipsToPixels(width, state.scaleFactor),
     height: dipsToPixels(height, state.scaleFactor)
   };
-  const area = state.settings.mode === 'desktop' ? null : state.follower?.usable;
-  const clamped = area ? clampToMonitors(rect, [area]) : clampToMonitors(rect, state.monitors);
+  let area = state.follower?.usable;
+  let clamped;
+  if (state.settings.mode === 'desktop') {
+    // Windows behaviour (Screen::FromPoint(...).WorkingArea): the pet is clamped
+    // into the panel-free area of the monitor its top-left corner is being
+    // dragged onto, so it can be moved between screens but never rest in a gap
+    // or under a panel.
+    area = workAreaAt({x: rect.x, y: rect.y}, state.desktopAreas);
+    clamped = area ? clampToMonitors(rect, [area]) : rect;
+  } else {
+    clamped = area ? clampToMonitors(rect, [area]) : clampToMonitors(rect, state.monitors);
+  }
   return {x: pixelsToDips(clamped.x, state.scaleFactor), y: pixelsToDips(clamped.y, state.scaleFactor)};
 }
 
@@ -1125,7 +1172,7 @@ async function start() {
   handleAssetProtocol();
   registerIpc();
   await createWidgetWindow();
-  applyMode();
+  applyMode({initial: true});
   void refreshQuota({silent: true});
   setInterval(pollStatus, 1000);
   writePresence({force: true});
