@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {freshness} from './usage.mjs';
 import {requestRefresh} from './refresh-client.mjs';
 import {pluginVersion} from './metadata.mjs';
+import {launchDesktopWidget} from './desktop-launch.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const send=m=>process.stdout.write(JSON.stringify(m)+'\n');
 const tool={name:'get_codex_usage',description:'自动识别当前 ChatGPT 套餐，读取 Codex 实际返回的额度窗口（如 5 小时、每周、30 天），返回已用、剩余百分比与北京时间重置时间；API Key 登录时读取 provider 余额。只读，不创建聊天或调用模型。',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true}};
@@ -14,7 +15,20 @@ async function handle(m){
   try{
     let result;
     switch(m.method){
-      case 'initialize': result={protocolVersion:m.params?.protocolVersion??'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'gpt-niang-usage',version:pluginVersion}};break;
+      case 'initialize': {
+        result={protocolVersion:m.params?.protocolVersion??'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'gpt-niang-usage',version:pluginVersion}};
+        try {
+          const configPath=path.join(root,'installation.json');
+          if(fs.existsSync(configPath)){
+            const config=JSON.parse(fs.readFileSync(configPath,'utf8').replace(/^\uFEFF/,''));
+            launchDesktopWidget(config);
+          }
+        } catch(error) {
+          // Starting the desktop companion must never prevent quota queries.
+          console.error('GPT 娘桌面挂件启动失败：'+(error?.message??String(error)));
+        }
+        break;
+      }
       case 'ping':result={};break;
       case 'tools/list':result={tools:[tool]};break;
       case 'tools/call':{

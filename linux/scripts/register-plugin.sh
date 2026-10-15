@@ -9,6 +9,7 @@
 #   scripts/register-plugin.sh --remove        # uninstall and forget it
 #   scripts/register-plugin.sh --source <dir>  # plugin source (default: ../gpt-niang-usage)
 #   scripts/register-plugin.sh --root <dir>    # marketplace root (default: under the widget's data dir)
+#   scripts/register-plugin.sh --widget <file>  # installed widget executable or AppImage
 #
 # The plugin is copied rather than linked: the copy is what Codex materialises,
 # and the script rewrites its .mcp.json with the absolute node path it found, so
@@ -25,12 +26,14 @@ data_dir="${GPT_NIANG_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/GPTNiangUsa
 marketplace_root="$(dirname "$data_dir")/plugin-marketplace/$marketplace_id"
 codex_bin="${CODEX_BIN:-$(command -v codex || true)}"
 action='install'
+widget_bin=''
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --remove) action='remove'; shift ;;
     --source) source_dir="$2"; shift 2 ;;
     --root) marketplace_root="$2"; shift 2 ;;
+    --widget) widget_bin="$2"; shift 2 ;;
     -h|--help) sed -n '2,20p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -68,6 +71,25 @@ fi
 
 version="$(node -e "process.stdout.write(require('$source_dir/.codex-plugin/plugin.json').version)")"
 
+# Prefer the current checkout for source installs. Packaged installs can pass
+# --widget, or use an executable installed on PATH by the deb package.
+widget_app_dir="$(dirname "$source_dir")/linux"
+widget_args=()
+if [ -n "$widget_bin" ]; then
+  widget_bin="$(realpath "$widget_bin")"
+  widget_args=(--ozone-platform=x11)
+elif [ -x "$widget_app_dir/node_modules/electron/dist/electron" ]; then
+  widget_bin="$(realpath "$widget_app_dir/node_modules/electron/dist/electron")"
+  widget_args=(--ozone-platform=x11 "$widget_app_dir")
+elif command -v gpt-niang-usage-linux >/dev/null 2>&1; then
+  widget_bin="$(realpath "$(command -v gpt-niang-usage-linux)")"
+  widget_args=(--ozone-platform=x11)
+fi
+if [ -n "$widget_bin" ] && [ ! -x "$widget_bin" ]; then
+  echo "桌面挂件不可执行：$widget_bin" >&2
+  exit 1
+fi
+
 # The plugin only needs the manifest, its MCP declaration, the runtime the tool
 # runs from and the assets the manifest points at.
 rm -rf "$plugin_dir"
@@ -99,9 +121,11 @@ if [ -f "$data_dir/settings.json" ]; then
 fi
 node -e "
   const fs = require('node:fs');
-  const [dataDir, nodePath, codexPath, quotaSource] = process.argv.slice(1);
-  fs.writeFileSync('$plugin_dir/installation.json', JSON.stringify({dataDir, nodePath, codexPath, quotaSource}, null, 2) + '\n');
-" "$data_dir" "$node_bin" "$codex_bin" "$quota_source"
+  const [dataDir, nodePath, codexPath, quotaSource, widgetBin, ...widgetArgs] = process.argv.slice(1);
+  const config = {dataDir, nodePath, codexPath, quotaSource};
+  if (widgetBin) config.widgetLaunch = {command: widgetBin, args: widgetArgs};
+  fs.writeFileSync('$plugin_dir/installation.json', JSON.stringify(config, null, 2) + '\n');
+" "$data_dir" "$node_bin" "$codex_bin" "$quota_source" "$widget_bin" "${widget_args[@]}"
 
 # The marketplace manifest is what the CLI reads: its `name` becomes the
 # marketplace id, and each entry points at a plugin directory.
@@ -143,3 +167,8 @@ plugin_list | node -e "
     console.log('重新打开 Codex（或新建会话）后即可使用工具 get_codex_usage。');
   });
 "
+if [ -n "$widget_bin" ]; then
+  echo "插件启动时会一并启动桌面挂件：$widget_bin"
+else
+  echo '未找到桌面挂件可执行文件；额度工具可用，桌面挂件不会自动启动。可用 --widget 指定路径。' >&2
+fi

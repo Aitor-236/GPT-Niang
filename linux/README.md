@@ -125,6 +125,11 @@ npm run unregister-plugin   # 卸载并删除本地市场目录
 
 `--source <目录>` 可以指定插件源（安装包场景传它的 `resources` 目录），`--root <目录>`
 可以换本地市场位置；`CODEX_BIN` / `GPT_NIANG_NODE` 用于指定 `codex` 与 `node` 的路径。
+Linux 插件在 Codex 初始化额度工具时也会启动桌面挂件。注册脚本默认寻找同仓库
+`linux/node_modules/electron/dist/electron`，其次寻找 PATH 中的 deb 可执行文件；
+使用 AppImage 或自定义安装路径时，注册时加 `--widget <可执行文件>`。
+多个会话同时启动会合并为一个挂件进程；没有图形桌面或找不到可执行文件时，
+额度查询工具仍可使用。源码版首次运行前仍需执行 `npm run fix-sandbox`。
 
 ## 已知限制
 
